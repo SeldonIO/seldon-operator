@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+metadata:
+ name: webhook-server-service
+ namespace: default
+spec:
+ type: ClusterIP
+ ports:
+ - port: 443
+   targetPort: 9876
+
+

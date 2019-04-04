@@ -1,0 +1,3 @@
+version: "1"
+domain: seldon.io
+repo: github.com/seldonio/seldon-operator

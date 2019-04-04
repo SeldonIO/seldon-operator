@@ -1,0 +1,8 @@
+apiVersion: machinelearning.seldon.io/v1alpha2
+kind: SeldonDeployment
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: seldondeployment-sample
+spec:
+  name: foobar

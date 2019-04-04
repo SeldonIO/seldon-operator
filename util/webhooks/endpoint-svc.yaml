@@ -1,0 +1,12 @@
+kind: Endpoints
+apiVersion: v1
+metadata:
+ name: webhook-server-service
+ namespace: default
+subsets:
+ - addresses:
+     - ip: 10.0.2.15
+   ports:
+     - port: 9876
+
+
