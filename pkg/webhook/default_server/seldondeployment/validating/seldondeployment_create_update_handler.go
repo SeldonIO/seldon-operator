@@ -48,9 +48,9 @@ type SeldonDeploymentCreateUpdateHandler struct {
 
 func (h *SeldonDeploymentCreateUpdateHandler) validatingSeldonDeploymentFn(ctx context.Context, obj *machinelearningv1alpha2.SeldonDeployment) (bool, string, error) {
 	// TODO(user): implement your admission logic
-	if obj.Spec.Name != "foobar" {
-		return false, "name must be foobar", nil
-	}
+	//if obj.Spec.Name != "foobar" {
+	//		return false, "name must be foobar", nil
+	//	}
 	return true, "allowed to be admitted", nil
 }
 

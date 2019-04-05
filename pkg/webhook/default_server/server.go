@@ -66,8 +66,8 @@ func Add(mgr manager.Manager) error {
 						"control-plane": "controller-manager",
 					},
 				},
-
 			*/
+
 		},
 	})
 	if err != nil {

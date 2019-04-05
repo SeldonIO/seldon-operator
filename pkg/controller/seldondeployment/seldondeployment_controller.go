@@ -18,13 +18,18 @@ package seldondeployment
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"os"
 	"reflect"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -34,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"strconv"
 )
 
 const (
@@ -102,12 +108,172 @@ func getNamespace(deployment *machinelearningv1alpha2.SeldonDeployment) string {
 	}
 }
 
+const (
+	PODINFO_VOLUME_NAME = "podInfo"
+	PODINFO_VOLUME_PATH = "/etc/podinfo"
+
+	ANNOTATION_JAVA_OPTS = "seldonio/engine-java-opts"
+	ANNOTATION_SEPARATE_ENGINE = "seldon.io/engine-separate-pod"
+
+	DEFAULT_ENGINE_CONTAINER_PORT = 8000
+	DEFAULT_ENGINE_GRPC_PORT = 5001
+)
+
+func getEngineVarJson(p *machinelearningv1alpha2.PredictorSpec) (string, error) {
+	str, err := json.Marshal(p)
+	if err != nil {
+		return "", err
+	}
+	return  base64.StdEncoding.EncodeToString(str), nil
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec) (*corev1.Container,error) {
+	var engineUser int64 = 8888
+	// get predictor as base64 encoded json
+	predictorB64, err := getEngineVarJson(p)
+	if err != nil {
+		return nil, err
+	}
+
+	//get annotation for java opts or default
+	javaOpts, err := mlDep.Spec.Annotations[ANNOTATION_JAVA_OPTS]
+	if err != nil {
+		javaOpts = "-Dcom.sun.management.jmxremote.rmi.port=9090 -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=9090 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.local.only=false -Djava.rmi.server.hostname=127.0.0.1"
+	}
+
+
+	//Engine resources
+	engineResources :=  p.SvcOrchSpec.Resources
+	if engineResources == nil {
+		cpuQuantity,_  := resource.ParseQuantity("1")
+		engineResources = &corev1.ResourceRequirements{
+			Requests: map[corev1.ResourceName]resource.Quantity{
+				corev1.ResourceCPU:cpuQuantity,
+			},
+		}
+	}
+
+	c := corev1.Container{
+			Name:            "seldon-container-engine",
+			Image:           getEnv("ENGINE_CONTAINER_IMAGE_AND_VERSION","seldonio/engine:0.2.7-SNAPSHOT"),
+			ImagePullPolicy: corev1.PullPolicy(getEnv("ENGINE_CONTAINER_IMAGE_PULL_POLICY","IfNotPresent")),
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      PODINFO_VOLUME_NAME,
+					MountPath: PODINFO_VOLUME_PATH,
+				},
+			},
+			Env: []corev1.EnvVar{
+				{Name: "ENGINE_PREDICTOR", Value: predictorB64},
+				{Name: "DEPLOYMENT_NAME", Value: mlDep.Spec.Name},
+				{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(DEFAULT_ENGINE_CONTAINER_PORT)},
+				{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(DEFAULT_ENGINE_GRPC_PORT)},
+				{Name: "JAVA_OPTS", Value: javaOpts},
+			},
+			Ports: []corev1.ContainerPort{
+				{ContainerPort: DEFAULT_ENGINE_CONTAINER_PORT},
+				{ContainerPort: DEFAULT_ENGINE_GRPC_PORT},
+				{ContainerPort: 8082, Name: "admin"},
+				{ContainerPort: 9090, Name: "jmx"},
+			},
+			SecurityContext: &corev1.SecurityContext{RunAsUser: &engineUser},
+			ReadinessProbe: &corev1.Probe{Handler: corev1.Handler{HTTPGet: &corev1.HTTPGetAction{Port: intstr.IntOrString{Type: 1, StrVal: "admin"}, Path: "/ready"}},
+				InitialDelaySeconds: 20,
+				PeriodSeconds:       1,
+				FailureThreshold:    1,
+				SuccessThreshold:    1,
+				TimeoutSeconds:      2},
+			LivenessProbe:&corev1.Probe{Handler: corev1.Handler{HTTPGet: &corev1.HTTPGetAction{Port: intstr.IntOrString{Type: 1, StrVal: "admin"}, Path: "/ready"}},
+				InitialDelaySeconds: 20,
+				PeriodSeconds:       5,
+				FailureThreshold:    3,
+				SuccessThreshold:    1,
+				TimeoutSeconds:      2},
+			Lifecycle: &corev1.Lifecycle{
+				PreStop: &corev1.Handler{
+					Exec: &corev1.ExecAction{Command: []string{"/bin/sh","-c","curl 127.0.0.1:"+strconv.Itoa(DEFAULT_ENGINE_GRPC_PORT)+"/pause && /bin/sleep 10"}},
+				},
+			},
+			Resources:*engineResources,
+		}
+
+	return &c, nil
+}
+
+func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec,seldonId string) (*appsv1.Deployment, error)  {
+
+	var terminationGracePeriodSecs = int64(20)
+
+	depName := GetServiceOrchestratorName(mlDep,p)
+
+	con, err := createEngineContainer(mlDep,p)
+	if err != nil {
+		return nil, err
+	}
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        depName,
+			Namespace:   getNamespace(mlDep),
+			Labels:      map[string]string{Label_seldon_id: seldonId, "app": depName,"version":"v1"},
+			Annotations: p.Annotations,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{Label_seldon_id: seldonId},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{Label_seldon_id: seldonId, "app": depName},
+					Annotations: map[string]string{
+						"prometheus.io/path":"/prometheus",
+						"prometheus.io/port":strconv.Itoa(DEFAULT_ENGINE_CONTAINER_PORT),
+						"prometheus.io/scrape":"true",
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						*con,
+					},
+					TerminationGracePeriodSeconds:&terminationGracePeriodSecs,
+					ServiceAccountName:getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME","seldon"),
+					Volumes: []corev1.Volume{
+						{Name:PODINFO_VOLUME_NAME,VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{Items:[]corev1.DownwardAPIVolumeFile{
+							{Path:"annotations",FieldRef: &corev1.ObjectFieldSelector{FieldPath:"metadata.annotations"}},
+						}}}},
+					},
+				},
+			},
+			Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable:&intstr.IntOrString{StrVal:"10%"}}},
+			Replicas:&p.Replicas,
+		},
+	}
+	return deploy, nil
+}
+
 func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
 	c := components{}
 	seldonId := GetSeldonDeploymentName(mlDep)
-	c.deployments = append(c.deployments, &appsv1.Deployment{})
+
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
+
+		// Add engine deployment if separate
+		_, hasSeparateEnginePod := mlDep.Spec.Annotations[ANNOTATION_SEPARATE_ENGINE]
+		if hasSeparateEnginePod {
+			deploy, err := createEngineDeployment(mlDep,&p,seldonId)
+			if err != nil {
+				return nil, err
+			}
+			c.deployments = append(c.deployments, deploy)
+		}
+
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 			// create Deployment from podspec
@@ -130,6 +296,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 						Spec: cSpec.Spec,
 					},
 				},
+
 			}
 			c.deployments = append(c.deployments, deploy)
 
@@ -137,11 +304,11 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				con := cSpec.Spec.Containers[0]
 				containerServiceKey := GetPredictorServiceNameKey(&con)
-				containerServiceValue := GetContainerServiceName(mlDep,p,&con)
+				containerServiceValue := GetContainerServiceName(mlDep, p, &con)
 				svc := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: containerServiceValue,
-						Labels: map[string]string{containerServiceKey : containerServiceValue, Label_seldon_id: mlDep.Spec.Name},
+						Name:   containerServiceValue,
+						Labels: map[string]string{containerServiceKey: containerServiceValue, Label_seldon_id: mlDep.Spec.Name},
 					},
 				}
 				c.services = append(c.services, svc)
@@ -151,8 +318,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	return &c, nil
 }
 
-
-func createDeployments(r *ReconcileSeldonDeployment,components *components,instance *machinelearningv1alpha2.SeldonDeployment) error {
+func createDeployments(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) error {
 	for _, deploy := range components.deployments {
 
 		if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
@@ -166,12 +332,14 @@ func createDeployments(r *ReconcileSeldonDeployment,components *components,insta
 		if err != nil && errors.IsNotFound(err) {
 			log.Info("Creating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
 			err = r.Create(context.TODO(), deploy)
-
-			instance.Status.State = "Creating"
-			err = r.Status().Update(context.Background(), instance)
 			if err != nil {
 				return err
 			}
+			//instance.Status.State = "Creating"
+			//err = r.Status().Update(context.Background(), instance)
+			//if err != nil {
+			//	return err
+			//}
 
 		} else if err != nil {
 			return err
@@ -191,6 +359,7 @@ func createDeployments(r *ReconcileSeldonDeployment,components *components,insta
 		}
 
 	}
+	return nil
 }
 
 // Reconcile reads that state of the cluster for a SeldonDeployment object and makes changes based on the state read
@@ -220,7 +389,7 @@ func (r *ReconcileSeldonDeployment) Reconcile(request reconcile.Request) (reconc
 
 	components, _ := createComponents(instance)
 
-	err = createDeployments(r,components,instance)
+	err = createDeployments(r, components, instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}

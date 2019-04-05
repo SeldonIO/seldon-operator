@@ -14,23 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package validating
+package mutating
 
 import (
-	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
-	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission/builder"
 )
 
-func init() {
-
-	builderName := "validating-create-update-seldondeployment"
-	Builders[builderName] = builder.
-		NewWebhookBuilder().
-		Name(builderName+".seldon.io").
-		Path("/"+builderName).
-		Validating().
-		Operations(admissionregistrationv1beta1.Create, admissionregistrationv1beta1.Update).
-		FailurePolicy(admissionregistrationv1beta1.Fail).
-		ForType(&machinelearningv1alpha2.SeldonDeployment{})
-}
+var (
+	// Builders contain admission webhook builders
+	Builders = map[string]*builder.WebhookBuilder{}
+	// HandlerMap contains admission webhook handlers
+	HandlerMap = map[string][]admission.Handler{}
+)

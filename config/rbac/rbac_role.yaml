@@ -25,6 +25,26 @@ rules:
   - update
   - patch
 - apiGroups:
+  - v1
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - v1
+  resources:
+  - services/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - machinelearning.seldon.io
   resources:
   - seldondeployments

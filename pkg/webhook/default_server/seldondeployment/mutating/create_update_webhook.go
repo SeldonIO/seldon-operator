@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package validating
+package mutating
 
 import (
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
@@ -23,13 +23,12 @@ import (
 )
 
 func init() {
-
-	builderName := "validating-create-update-seldondeployment"
+	builderName := "mutating-create-update-seldondeployment"
 	Builders[builderName] = builder.
 		NewWebhookBuilder().
 		Name(builderName+".seldon.io").
 		Path("/"+builderName).
-		Validating().
+		Mutating().
 		Operations(admissionregistrationv1beta1.Create, admissionregistrationv1beta1.Update).
 		FailurePolicy(admissionregistrationv1beta1.Fail).
 		ForType(&machinelearningv1alpha2.SeldonDeployment{})

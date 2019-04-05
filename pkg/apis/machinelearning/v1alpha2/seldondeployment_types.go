@@ -28,7 +28,7 @@ import (
 // SeldonDeploymentSpec defines the desired state of SeldonDeployment
 type SeldonDeploymentSpec struct {
 	Name        string            `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
-	Predictors  []PredictorSpec   `json:"predictorSpec,omitempty" protobuf:"bytes,2,opt,name=name"`
+	Predictors  []PredictorSpec   `json:"predictors,omitempty" protobuf:"bytes,2,opt,name=name"`
 	OauthKey    string            `json:"oauth_key,omitempty" protobuf:"string,3,opt,name=oauth_key"`
 	OauthSecret string            `json:"oauth_secret,omitempty" protobuf:"string,4,opt,name=oauth_secret"`
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,5,opt,name=annotations"`
@@ -36,7 +36,7 @@ type SeldonDeploymentSpec struct {
 
 type PredictorSpec struct {
 	Name            string                  `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
-	Graph           PredictiveUnit          `json:"predictiveUnit,omitempty" protobuf:"bytes,2,opt,name=predictiveUnit"`
+	Graph           *PredictiveUnit         `json:"graph,omitempty" protobuf:"bytes,2,opt,name=predictiveUnit"`
 	ComponentSpecs  []SeldonPodSpec         `json:"componentSpecs,omitempty" protobuf:"bytes,3,opt,name=componentSpecs"`
 	Replicas        int32                   `json:"replicas,omitempty" protobuf:"string,4,opt,name=replicas"`
 	Annotations     map[string]string       `json:"annotations,omitempty" protobuf:"bytes,5,opt,name=annotations"`
@@ -47,8 +47,8 @@ type PredictorSpec struct {
 }
 
 type SvcOrchSpec struct {
-	Resources v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,1,opt,name=resources"`
-	Env       v1.EnvVar               `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
+	Resources *v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,1,opt,name=resources"`
+	Env       *v1.EnvVar               `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
 }
 
 type SeldonPodSpec struct {
@@ -63,58 +63,58 @@ type SeldonHpaSpec struct {
 	Metrics     autoscalingv2beta2.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,opt,name=metrics"`
 }
 
-type PredictiveUnitType uint8
+type PredictiveUnitType string
 
 const (
-	UNKNOWN_TYPE PredictiveUnitType = iota
-	ROUTER
-	COMBINER
-	MODEL
-	TRANSFORMER
-	OUTPUT_TRANSFORMER
+	UNKNOWN_TYPE       PredictiveUnitType = "UNKOWN_TYPE"
+	ROUTER             PredictiveUnitType = "ROUTER"
+	COMBINER           PredictiveUnitType = "COMBINER"
+	MODEL              PredictiveUnitType = "MODEL"
+	TRANSFORMER        PredictiveUnitType = "TRANSFORMER"
+	OUTPUT_TRANSFORMER PredictiveUnitType = "OUTPUT_TRANSFORMER"
 )
 
-type PredictiveUnitImplementation uint8
+type PredictiveUnitImplementation string
 
 const (
-	UNKNOWN_IMPLEMENTATION PredictiveUnitImplementation = iota
-	SIMPLE_MODEL
-	SIMPLE_ROUTER
-	RANDOM_ABTEST
-	AVERAGE_COMBINER
+	UNKNOWN_IMPLEMENTATION PredictiveUnitImplementation = "UNKNOWN_IMPLEMENTATION"
+	SIMPLE_MODEL           PredictiveUnitImplementation = "SIMPLE_MODEL"
+	SIMPLE_ROUTER          PredictiveUnitImplementation = "SIMPLE_ROUTER"
+	RANDOM_ABTEST          PredictiveUnitImplementation = "RANDOM_ABTEST"
+	AVERAGE_COMBINER       PredictiveUnitImplementation = "AVERAGE_COMBINER"
 )
 
-type PredictiveUnitMethod uint8
+type PredictiveUnitMethod string
 
 const (
-	TRANSFORM_INPUT PredictiveUnitMethod = iota
-	TRANSFORM_OUTPUT
-	ROUTE
-	AGGREGATE
-	SEND_FEEDBACK
+	TRANSFORM_INPUT  PredictiveUnitMethod = "TRANSFORM_INPUT"
+	TRANSFORM_OUTPUT PredictiveUnitMethod = "TRANSFORM_OUTPUT"
+	ROUTE            PredictiveUnitMethod = "ROUTE"
+	AGGREGATE        PredictiveUnitMethod = "AGGREGATE"
+	SEND_FEEDBACK    PredictiveUnitMethod = "SEND_FEEDBACK"
 )
 
-type EndpointType uint8
+type EndpointType string
 
 const (
-	REST EndpointType = iota
-	GRPC
+	REST EndpointType = "REST"
+	GRPC EndpointType = "GRPC"
 )
 
 type Endpoint struct {
 	ServiceHost string       `json:"service_host,omitempty" protobuf:"string,1,opt,name=service_host"`
-	ServicePort *int32       `json:"service_port,omitempty" protobuf:"int32,2,opt,name=service_port"`
+	ServicePort int32        `json:"service_port,omitempty" protobuf:"int32,2,opt,name=service_port"`
 	Type        EndpointType `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
 }
 
-type ParmeterType uint8
+type ParmeterType string
 
 const (
-	INT ParmeterType = iota
-	FLOAT
-	DOUBLE
-	STRING
-	BOOL
+	INT    ParmeterType = "INT"
+	FLOAT  ParmeterType = "FLOAT"
+	DOUBLE ParmeterType = "DOUBLE"
+	STRING ParmeterType = "STRING"
+	BOOL   ParmeterType = "BOOL"
 )
 
 type Parameter struct {
@@ -155,6 +155,7 @@ type SeldonDeploymentStatus struct {
 
 // SeldonDeployment is the Schema for the seldondeployments API
 // +k8s:openapi-gen=true
+// +kubebuilder:resource:shortName=sdep
 // +kubebuilder:subresource:status
 type SeldonDeployment struct {
 	metav1.TypeMeta   `json:",inline"`

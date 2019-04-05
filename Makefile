@@ -20,6 +20,9 @@ run: generate fmt vet
 install: manifests
 	kubectl apply -f config/crds
 
+uninstall: manifests
+	kubectl delete -f config/crds
+
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests
 	kubectl apply -f config/crds

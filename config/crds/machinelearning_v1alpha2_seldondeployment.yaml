@@ -10,6 +10,8 @@ spec:
   names:
     kind: SeldonDeployment
     plural: seldondeployments
+    shortNames:
+    - sdep
   scope: Namespaced
   subresources:
     status: {}
@@ -34,7 +36,7 @@ spec:
               type: object
             name:
               type: string
-            predictorSpec:
+            predictors:
               items:
                 properties:
                   annotations:
@@ -61,11 +63,7 @@ spec:
                     type: array
                   engineResources:
                     type: object
-                  labels:
-                    type: object
-                  name:
-                    type: string
-                  predictiveUnit:
+                  graph:
                     properties:
                       children:
                         items:
@@ -74,12 +72,12 @@ spec:
                       endpoint:
                         properties:
                           type:
-                            type: byte
+                            type: string
                         type: object
                       implementation:
-                        type: byte
+                        type: string
                       methods:
-                        type: byte
+                        type: string
                       name:
                         type: string
                       parameters:
@@ -88,14 +86,18 @@ spec:
                             name:
                               type: string
                             type:
-                              type: byte
+                              type: string
                             value:
                               type: string
                           type: object
                         type: array
                       type:
-                        type: byte
+                        type: string
                     type: object
+                  labels:
+                    type: object
+                  name:
+                    type: string
                   replicas:
                     format: int32
                     type: integer
