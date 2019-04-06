@@ -24,10 +24,9 @@ import (
 	"net/http"
 	"strconv"
 
-
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
-	corev1 "k8s.io/api/core/v1"
 	controller "github.com/seldonio/seldon-operator/pkg/controller/seldondeployment"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission/types"
@@ -65,22 +64,8 @@ func addPorts(pu *machinelearningv1alpha2.PredictiveUnit, portMap map[string]int
 	}
 }
 
-func getPredcitiveUnit(pu *machinelearningv1alpha2.PredictiveUnit, name string) *machinelearningv1alpha2.PredictiveUnit {
-	if name == pu.Name {
-		return pu
-	} else {
-		for i := 0; i < len(pu.Children); i++ {
-			found := getPredcitiveUnit(&pu.Children[i], name)
-			if found != nil {
-				return found
-			}
-		}
-		return nil
-	}
-}
-
 func getPort(name string, ports []v1.ContainerPort) *v1.ContainerPort {
-	for i := 0;i<len(ports) ; i++ {
+	for i := 0; i < len(ports); i++ {
 		if ports[i].Name == name {
 			return &ports[i]
 		}
@@ -89,15 +74,11 @@ func getPort(name string, ports []v1.ContainerPort) *v1.ContainerPort {
 }
 
 const (
-	PODINFO_VOLUME_NAME = "podInfo"
-	PODINFO_VOLUME_PATH = "/etc/podinfo"
 	ENV_PREDICTIVE_UNIT_SERVICE_PORT = "PREDICTIVE_UNIT_SERVICE_PORT"
-	ENV_PREDICTIVE_UNIT_PARAMETERS = "PREDICTIVE_UNIT_PARAMETERS"
-	ENV_PREDICTIVE_UNIT_ID = "PREDICTIVE_UNIT_ID"
-	ENV_PREDICTOR_ID = "PREDICTOR_ID"
-	ENV_SELDON_DEPLOYMENT_ID = "SELDON_DEPLOYMENT_ID"
-
-
+	ENV_PREDICTIVE_UNIT_PARAMETERS   = "PREDICTIVE_UNIT_PARAMETERS"
+	ENV_PREDICTIVE_UNIT_ID           = "PREDICTIVE_UNIT_ID"
+	ENV_PREDICTOR_ID                 = "PREDICTOR_ID"
+	ENV_SELDON_DEPLOYMENT_ID         = "SELDON_DEPLOYMENT_ID"
 )
 
 func getPredictiveUnitAsJson(params []machinelearningv1alpha2.Parameter) string {
@@ -122,9 +103,9 @@ func (h *SeldonDeploymentCreateUpdateHandler) mutatingSeldonDeploymentFn(ctx con
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 
 			//Add downwardAPI
-			cSpec.Spec.Volumes = append(cSpec.Spec.Volumes,v1.Volume{Name:PODINFO_VOLUME_NAME,VolumeSource: corev1.VolumeSource{
-				DownwardAPI: &corev1.DownwardAPIVolumeSource{Items:[]corev1.DownwardAPIVolumeFile{
-					{Path:"annotations",FieldRef: &corev1.ObjectFieldSelector{FieldPath:"metadata.annotations"}}}}}})
+			cSpec.Spec.Volumes = append(cSpec.Spec.Volumes, v1.Volume{Name: controller.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{
+				DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
+					{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations"}}}}}})
 
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
@@ -138,61 +119,66 @@ func (h *SeldonDeploymentCreateUpdateHandler) mutatingSeldonDeploymentFn(ctx con
 				}
 				portNum := portMap[con.Name]
 
-				pu := getPredcitiveUnit(p.Graph, con.Name)
+				pu := controller.GetPredcitiveUnit(p.Graph, con.Name)
 
+				if pu != nil {
 
-				con.VolumeMounts = append(con.VolumeMounts, v1.VolumeMount{
-					Name:      PODINFO_VOLUME_NAME,
-					MountPath: PODINFO_VOLUME_PATH,
-				})
+					// Add a default REST endpoint if none provided
+					if pu.Endpoint == nil {
+						pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type:machinelearningv1alpha2.REST}
+					}
 
-				// Get existing Http or Grpc port and add Liveness and Readiness probes if they don't exist
-				var portType string
-				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-					portType = "http"
-				} else {
-					portType = "grpc"
+					con.VolumeMounts = append(con.VolumeMounts, v1.VolumeMount{
+						Name:      controller.PODINFO_VOLUME_NAME,
+						MountPath: controller.PODINFO_VOLUME_PATH,
+					})
+
+					// Get existing Http or Grpc port and add Liveness and Readiness probes if they don't exist
+					var portType string
+					if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+						portType = "http"
+					} else {
+						portType = "grpc"
+					}
+
+					existingPort := getPort(portType, con.Ports)
+					if existingPort == nil {
+						con.Ports = append(con.Ports, v1.ContainerPort{Name: "http", ContainerPort: portNum})
+					} else {
+						portNum = existingPort.ContainerPort
+					}
+					if con.LivenessProbe == nil {
+						con.LivenessProbe = &v1.Probe{Handler: v1.Handler{TCPSocket: &v1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 60, PeriodSeconds: 5}
+					}
+					if con.ReadinessProbe == nil {
+						con.ReadinessProbe = &v1.Probe{Handler: v1.Handler{TCPSocket: &v1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 20, PeriodSeconds: 5}
+					}
+
+					// Add livecycle probe
+					if con.Lifecycle == nil {
+						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 5"}}}}
+					}
+
+					// Add Environment Variables
+					con.Env = append(con.Env, []v1.EnvVar{
+						v1.EnvVar{Name: ENV_PREDICTIVE_UNIT_SERVICE_PORT, Value: strconv.Itoa(int(portNum))},
+						v1.EnvVar{Name: ENV_PREDICTIVE_UNIT_ID, Value: con.Name},
+						v1.EnvVar{Name: ENV_PREDICTOR_ID, Value: p.Name},
+						v1.EnvVar{Name: ENV_SELDON_DEPLOYMENT_ID, Value: mlDep.ObjectMeta.Name},
+					}...)
+					if len(pu.Parameters) > 0 {
+						con.Env = append(con.Env, v1.EnvVar{Name: ENV_PREDICTIVE_UNIT_PARAMETERS, Value: getPredictiveUnitAsJson(pu.Parameters)})
+					}
+
+					// Set ports and hostname in predictive unit
+					if _, hasSeparateEnginePod := mlDep.Spec.Annotations[controller.ANNOTATION_SEPARATE_ENGINE]; j == 0 && !hasSeparateEnginePod {
+						pu.Endpoint.ServiceHost = "localhost"
+					} else {
+						containerServiceValue := controller.GetContainerServiceName(mlDep, p, con)
+						pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
+					}
+					pu.Endpoint.ServicePort = portNum
 				}
-
-				existingPort := getPort(portType,con.Ports)
-				if existingPort == nil {
-					con.Ports = append(con.Ports,v1.ContainerPort{Name:"http",ContainerPort: portNum})
-				} else {
-					portNum = existingPort.ContainerPort
-				}
-				if con.LivenessProbe == nil {
-					con.LivenessProbe = &v1.Probe{Handler:v1.Handler{TCPSocket:&v1.TCPSocketAction{Port:intstr.IntOrString{Type:1,StrVal:portType}}},InitialDelaySeconds:60,PeriodSeconds:5}
-				}
-				if con.ReadinessProbe == nil {
-					con.ReadinessProbe = &v1.Probe{Handler:v1.Handler{TCPSocket:&v1.TCPSocketAction{Port:intstr.IntOrString{Type:1,StrVal:portType}}},InitialDelaySeconds:20,PeriodSeconds:5}
-				}
-
-				// Add livecycle probe
-				if con.Lifecycle == nil {
-					con.Lifecycle = &v1.Lifecycle{PreStop:&v1.Handler{Exec:&v1.ExecAction{Command: []string{"/bin/sh","-c","/bin/sleep 5"}}}}
-				}
-
-				// Add Environment Variables
-				con.Env =append(con.Env,[]v1.EnvVar{
-					v1.EnvVar{Name:ENV_PREDICTIVE_UNIT_SERVICE_PORT,Value:strconv.Itoa(int(portNum))},
-					v1.EnvVar{Name:ENV_PREDICTIVE_UNIT_ID,Value:con.Name},
-					v1.EnvVar{Name:ENV_PREDICTOR_ID,Value:p.Name},
-					v1.EnvVar{Name:ENV_SELDON_DEPLOYMENT_ID,Value:mlDep.ObjectMeta.Name},
-				}...)
-				if len(pu.Parameters) > 0 {
-					con.Env =append(con.Env,v1.EnvVar{Name:ENV_PREDICTIVE_UNIT_PARAMETERS,Value:getPredictiveUnitAsJson(pu.Parameters)})
-				}
-
-
-				// Set ports and hostname in predictive unit
-				if _, hasSeparateEnginePod := mlDep.Spec.Annotations[controller.ANNOTATION_SEPARATE_ENGINE] ; j == 0 && !hasSeparateEnginePod {
-					pu.Endpoint.ServiceHost = "localhost"
-				} else if j == 0 {
-					containerServiceValue := controller.GetContainerServiceName(mlDep, p, con)
-					pu.Endpoint.ServiceHost = containerServiceValue +"."+mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
-				}
-				pu.Endpoint.ServicePort = portNum
-
 			}
 		}
 	}

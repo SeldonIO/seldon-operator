@@ -37,7 +37,7 @@ type SeldonDeploymentSpec struct {
 type PredictorSpec struct {
 	Name            string                  `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
 	Graph           *PredictiveUnit         `json:"graph,omitempty" protobuf:"bytes,2,opt,name=predictiveUnit"`
-	ComponentSpecs  []SeldonPodSpec         `json:"componentSpecs,omitempty" protobuf:"bytes,3,opt,name=componentSpecs"`
+	ComponentSpecs  []*SeldonPodSpec        `json:"componentSpecs,omitempty" protobuf:"bytes,3,opt,name=componentSpecs"`
 	Replicas        int32                   `json:"replicas,omitempty" protobuf:"string,4,opt,name=replicas"`
 	Annotations     map[string]string       `json:"annotations,omitempty" protobuf:"bytes,5,opt,name=annotations"`
 	EngineResources v1.ResourceRequirements `json:"engineResources,omitempty" protobuf:"bytes,6,opt,name=engineResources"`
@@ -54,7 +54,7 @@ type SvcOrchSpec struct {
 type SeldonPodSpec struct {
 	Metadata metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	Spec     v1.PodSpec        `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
-	HpaSpec  SeldonHpaSpec     `json:"hpaSpec,omitempty" protobuf:"bytes,3,opt,name=hpaSpec"`
+	HpaSpec  *SeldonHpaSpec    `json:"hpaSpec,omitempty" protobuf:"bytes,3,opt,name=hpaSpec"`
 }
 
 type SeldonHpaSpec struct {
@@ -129,7 +129,7 @@ type PredictiveUnit struct {
 	Type           PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
 	Implementation PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
 	Methods        PredictiveUnitMethod         `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
-	Endpoint       Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
+	Endpoint       *Endpoint                    `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
 	Parameters     []Parameter                  `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
 }
 

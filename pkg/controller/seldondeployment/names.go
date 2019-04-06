@@ -15,7 +15,7 @@ func hash(text string) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
-func containerHash(podSpec machinelearningv1alpha2.SeldonPodSpec) string {
+func containerHash(podSpec *machinelearningv1alpha2.SeldonPodSpec) string {
 	s := []string{}
 	for i := 0; i < len(podSpec.Spec.Containers); i++ {
 		c := podSpec.Spec.Containers[i]
@@ -29,7 +29,7 @@ func GetSeldonDeploymentName(mlDep *machinelearningv1alpha2.SeldonDeployment) st
 	return mlDep.Spec.Name + "-" + mlDep.ObjectMeta.Name
 }
 
-func GetDeploymentName(mlDep *machinelearningv1alpha2.SeldonDeployment, predictorSpec machinelearningv1alpha2.PredictorSpec, podSpec machinelearningv1alpha2.SeldonPodSpec) string {
+func GetDeploymentName(mlDep *machinelearningv1alpha2.SeldonDeployment, predictorSpec machinelearningv1alpha2.PredictorSpec, podSpec *machinelearningv1alpha2.SeldonPodSpec) string {
 	if len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
 	} else {
@@ -49,8 +49,8 @@ func cleanContainerName(name string) string {
 
 func GetServiceOrchestratorName(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec) string {
 	svcOrchName := mlDep.Spec.Name + "-" + p.Name + "-svc-orch"
-	if len(svcOrchName)>63 {
-		return "seldon-"+hash(svcOrchName)
+	if len(svcOrchName) > 63 {
+		return "seldon-" + hash(svcOrchName)
 	} else {
 		return svcOrchName
 	}
