@@ -25,6 +25,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+func TestCleanImageName(t *testing.T) {
+	//g := gomega.NewGomegaWithT(t)
+	name2 := cleanContainerName("AB_C")
+	if name2 != "ab-c" {
+		t.Fatalf("should be abc: %s", name2)
+	}
+}
+
 func TestStorageSeldonDeployment(t *testing.T) {
 	key := types.NamespacedName{
 		Name:      "foo",

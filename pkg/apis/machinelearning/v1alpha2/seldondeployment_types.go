@@ -17,10 +17,112 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"regexp"
+	"strings"
 )
+
+const (
+	Label_seldon_id  = "seldon-deployment-id"
+	Label_seldon_app = "seldon-app"
+
+	PODINFO_VOLUME_NAME = "podinfo"
+	PODINFO_VOLUME_PATH = "/etc/podinfo"
+
+	ENV_PREDICTIVE_UNIT_SERVICE_PORT = "PREDICTIVE_UNIT_SERVICE_PORT"
+	ENV_PREDICTIVE_UNIT_PARAMETERS   = "PREDICTIVE_UNIT_PARAMETERS"
+	ENV_PREDICTIVE_UNIT_ID           = "PREDICTIVE_UNIT_ID"
+	ENV_PREDICTOR_ID                 = "PREDICTOR_ID"
+	ENV_SELDON_DEPLOYMENT_ID         = "SELDON_DEPLOYMENT_ID"
+
+	ANNOTATION_JAVA_OPTS       = "seldonio/engine-java-opts"
+	ANNOTATION_SEPARATE_ENGINE = "seldon.io/engine-separate-pod"
+	ANNOTATION_HEADLESS_SVC    = "seldon.io/headless-svc"
+)
+
+func hash(text string) string {
+	hasher := md5.New()
+	hasher.Write([]byte(text))
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+func containerHash(podSpec *SeldonPodSpec) string {
+	s := []string{}
+	for i := 0; i < len(podSpec.Spec.Containers); i++ {
+		c := podSpec.Spec.Containers[i]
+		s = append(s, c.Name)
+		s = append(s, c.Image)
+	}
+	return hash(strings.Join(s, ":"))[:7]
+}
+
+func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
+	return mlDep.Spec.Name + "-" + mlDep.ObjectMeta.Name
+}
+
+func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
+	if len(podSpec.Metadata.Name) != 0 {
+		return podSpec.Metadata.Name
+	} else {
+		name := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + containerHash(podSpec)
+		if len(name) > 63 {
+			return "seldon-" + hash(name)
+		} else {
+			return name
+		}
+	}
+}
+
+func GetServiceOrchestratorName(mlDep *SeldonDeployment, p *PredictorSpec) string {
+	svcOrchName := mlDep.Spec.Name + "-" + p.Name + "-svc-orch"
+	if len(svcOrchName) > 63 {
+		return "seldon-" + hash(svcOrchName)
+	} else {
+		return svcOrchName
+	}
+}
+
+func GetPredictorServiceNameKey(c *v1.Container) string {
+	return Label_seldon_app + "-" + c.Name
+}
+
+func GetPredcitiveUnit(pu *PredictiveUnit, name string) *PredictiveUnit {
+	if name == pu.Name {
+		return pu
+	} else {
+		for i := 0; i < len(pu.Children); i++ {
+			found := GetPredcitiveUnit(&pu.Children[i], name)
+			if found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+}
+
+func cleanContainerName(name string) string {
+	var re = regexp.MustCompile("[^-a-z0-9]")
+	return re.ReplaceAllString(strings.ToLower(name), "-")
+}
+
+func GetContainerServiceName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, c *v1.Container) string {
+	containerImageName := cleanContainerName(c.Name)
+	svcName := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + c.Name + "-" + containerImageName
+	if len(svcName) > 63 {
+		svcName = "seldon" + "-" + containerImageName + "-" + hash(svcName)
+		if len(svcName) > 63 {
+			return "seldon-" + hash(svcName)
+		} else {
+			return svcName
+		}
+	} else {
+		return svcName
+	}
+}
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -58,9 +160,9 @@ type SeldonPodSpec struct {
 }
 
 type SeldonHpaSpec struct {
-	MinReplicas int32                         `json:"minReplicas,omitempty" protobuf:"int,1,opt,name=minReplicas"`
-	MaxReplicas int32                         `json:"maxReplicas,omitempty" protobuf:"int,2,opt,name=maxReplicas"`
-	Metrics     autoscalingv2beta2.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,opt,name=metrics"`
+	MinReplicas *int32                          `json:"minReplicas,omitempty" protobuf:"int,1,opt,name=minReplicas"`
+	MaxReplicas int32                           `json:"maxReplicas,omitempty" protobuf:"int,2,opt,name=maxReplicas"`
+	Metrics     []autoscalingv2beta2.MetricSpec `json:"metrics,omitempty" protobuf:"bytes,3,opt,name=metrics"`
 }
 
 type PredictiveUnitType string
@@ -124,30 +226,30 @@ type Parameter struct {
 }
 
 type PredictiveUnit struct {
-	Name           string                       `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
-	Children       []PredictiveUnit             `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
-	Type           PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
-	Implementation PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
-	Methods        PredictiveUnitMethod         `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
-	Endpoint       *Endpoint                    `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
-	Parameters     []Parameter                  `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
+	Name           string                        `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
+	Children       []PredictiveUnit              `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
+	Type           *PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
+	Implementation *PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
+	Methods        *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
+	Endpoint       *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
+	Parameters     []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
 }
 
-type PredictorStatus struct {
+type DeploymentStatus struct {
 	Name              string `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
 	Status            string `json:"status,omitempty" protobuf:"string,2,opt,name=status"`
 	Description       string `json:"description,omitempty" protobuf:"string,3,opt,name=description"`
 	Replicas          int32  `json:"replicas,omitempty" protobuf:"string,4,opt,name=replicas"`
-	ReplicasAvailable int32  `json:"replicasAvailable,omitempty" protobuf:"string,5,opt,name=replicasAvailable"`
+	AvailableReplicas int32  `json:"availableReplicas,omitempty" protobuf:"string,5,opt,name=availableRelicas"`
 }
 
 // SeldonDeploymentStatus defines the observed state of SeldonDeployment
 type SeldonDeploymentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	State           string          `json:"state,omitempty" protobuf:"string,1,opt,name=state"`
-	Description     string          `json:"description,omitempty" protobuf:"string,2,opt,name=description"`
-	PredictorStatus PredictorStatus `json:"predictorStatus,omitempty" protobuf:"bytes,3,opt,name=predictorStatus"`
+	State            string                      `json:"state,omitempty" protobuf:"string,1,opt,name=state"`
+	Description      string                      `json:"description,omitempty" protobuf:"string,2,opt,name=description"`
+	DeploymentStatus map[string]DeploymentStatus `json:"deploymentStatus,omitempty" protobuf:"bytes,3,opt,name=predictorStatus"`
 }
 
 // +genclient

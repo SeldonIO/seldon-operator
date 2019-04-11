@@ -50,7 +50,9 @@ spec:
                               format: int32
                               type: integer
                             metrics:
-                              type: object
+                              items:
+                                type: object
+                              type: array
                             minReplicas:
                               format: int32
                               type: integer
@@ -77,7 +79,9 @@ spec:
                       implementation:
                         type: string
                       methods:
-                        type: string
+                        items:
+                          type: string
+                        type: array
                       name:
                         type: string
                       parameters:
@@ -116,23 +120,10 @@ spec:
           type: object
         status:
           properties:
+            deploymentStatus:
+              type: object
             description:
               type: string
-            predictorStatus:
-              properties:
-                description:
-                  type: string
-                name:
-                  type: string
-                replicas:
-                  format: int32
-                  type: integer
-                replicasAvailable:
-                  format: int32
-                  type: integer
-                status:
-                  type: string
-              type: object
             state:
               description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                 of cluster Important: Run "make" to regenerate code after modifying

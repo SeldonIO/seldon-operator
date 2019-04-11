@@ -46,11 +46,53 @@ type SeldonDeploymentCreateUpdateHandler struct {
 	Decoder types.Decoder
 }
 
+func getContainerForPredictiveUnit(p *machinelearningv1alpha2.PredictorSpec, name string) bool {
+	for j := 0; j < len(p.ComponentSpecs); j++ {
+		cSpec := p.ComponentSpecs[j]
+		for k := 0; k < len(cSpec.Spec.Containers); k++ {
+			c := cSpec.Spec.Containers[k]
+			if c.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Check the predictive units to ensure the graph matches up with defined containers.
+func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) (bool, string) {
+	if *pu.Implementation == machinelearningv1alpha2.UNKNOWN_IMPLEMENTATION {
+
+		if !getContainerForPredictiveUnit(p, pu.Name) {
+			return false, "Can't find container for Preditive Unit " + pu.Name
+		}
+
+		if *pu.Type == machinelearningv1alpha2.UNKNOWN_TYPE && (pu.Methods == nil || len(*pu.Methods) == 0) {
+			return false, "Predictive Unit " + pu.Name + " has no implementation methods defined. Change to a know type or add what methods it defines"
+		}
+
+		for i := 0; i < len(pu.Children); i++ {
+			checkPredictiveUnits(&pu.Children[i], p)
+		}
+	}
+	return true, ""
+}
+
 func (h *SeldonDeploymentCreateUpdateHandler) validatingSeldonDeploymentFn(ctx context.Context, obj *machinelearningv1alpha2.SeldonDeployment) (bool, string, error) {
-	// TODO(user): implement your admission logic
-	//if obj.Spec.Name != "foobar" {
-	//		return false, "name must be foobar", nil
-	//	}
+
+	predictorNames := make(map[string]bool)
+	for i := 0; i < len(obj.Spec.Predictors); i++ {
+		p := obj.Spec.Predictors[i]
+		if _, present := predictorNames[p.Name]; present {
+			return false, "Duplicate Predictor Name " + p.Name, nil
+		}
+		predictorNames[p.Name] = true
+		ok, reason := checkPredictiveUnits(p.Graph, &p)
+		if !ok {
+			return false, reason, nil
+		}
+
+	}
 	return true, "allowed to be admitted", nil
 }
 

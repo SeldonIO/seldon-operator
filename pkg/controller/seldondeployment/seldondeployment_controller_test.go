@@ -17,35 +17,49 @@ limitations under the License.
 package seldondeployment
 
 import (
+	"context"
+	"encoding/json"
+	"github.com/onsi/gomega"
+	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
+	"github.com/seldonio/seldon-operator/pkg/webhook/default_server/seldondeployment/mutating"
+	"io/ioutil"
+	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"path/filepath"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"testing"
 	"time"
 )
 
 var c client.Client
 
-var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo", Namespace: "default"}}
-var depKey = types.NamespacedName{Name: "foo-deployment", Namespace: "default"}
+var expectedRequest = reconcile.Request{NamespacedName: types.NamespacedName{Name: "seldon-model", Namespace: "default"}}
+var depKey = types.NamespacedName{Name: "test-deployment-example-8082e22", Namespace: "default"}
 
-const timeout = time.Second * 5
+const timeout = time.Second * 500
 
-/*
-func TestEngineJson(t *testing.T) {
-	mlDep := machinelearningv1alpha2.SeldonDeployment{
-		Spec:machinelearningv1alpha2.SeldonDeploymentSpec{
-			Predictors: []machinelearningv1alpha2.PredictorSpec{
-
-			},
-		},
+func helperLoadBytes(t *testing.T, name string) []byte {
+	path := filepath.Join("testdata", name) // relative path
+	bytes, err := ioutil.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return bytes
 }
-*/
 
-/*
 func TestReconcile(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
-	instance := &machinelearningv1alpha2.SeldonDeployment{ObjectMeta: metav1.ObjectMeta{Name: "foo", Namespace: "default"}}
+
+	instance := &machinelearningv1alpha2.SeldonDeployment{}
+
+	bStr := helperLoadBytes(t, "model.json")
+	json.Unmarshal(bStr, instance)
+
+	updateHandler := &mutating.SeldonDeploymentCreateUpdateHandler{}
+	updateHandler.MutatingSeldonDeploymentFn(context.TODO(), instance)
 
 	// Setup the Manager and Controller.  Wrap the Controller Reconcile function so it writes each request to a
 	// channel when it is finished.
@@ -72,22 +86,25 @@ func TestReconcile(t *testing.T) {
 		return
 	}
 	g.Expect(err).NotTo(gomega.HaveOccurred())
+	// delete the SeldonDeployment at end of test
 	defer c.Delete(context.TODO(), instance)
 	g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
 
 	deploy := &appsv1.Deployment{}
+	// We should eventually get the created deployment
 	g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
 		Should(gomega.Succeed())
 
 	// Delete the Deployment and expect Reconcile to be called for Deployment deletion
 	g.Expect(c.Delete(context.TODO(), deploy)).NotTo(gomega.HaveOccurred())
+	// wait until we have seen a new reconcile processed
 	g.Eventually(requests, timeout).Should(gomega.Receive(gomega.Equal(expectedRequest)))
+	// Keep checking until we find the deployment again
 	g.Eventually(func() error { return c.Get(context.TODO(), depKey, deploy) }, timeout).
 		Should(gomega.Succeed())
 
 	// Manually delete Deployment since GC isn't enabled in the test control plane
 	g.Eventually(func() error { return c.Delete(context.TODO(), deploy) }, timeout).
-		Should(gomega.MatchError("deployments.apps \"foo-deployment\" not found"))
+		Should(gomega.MatchError("deployments.apps \"test-deployment-example-8082e22\" not found"))
 
 }
-*/
