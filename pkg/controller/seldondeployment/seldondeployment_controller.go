@@ -17,9 +17,11 @@ limitations under the License.
 package seldondeployment
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -273,11 +275,12 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 	return deploy, nil
 }
 
-func createHpa(podSpec *machinelearningv1alpha2.SeldonPodSpec, deploymentName string, seldonId string) *autoscaling.HorizontalPodAutoscaler {
+func createHpa(podSpec *machinelearningv1alpha2.SeldonPodSpec, deploymentName string, seldonId string, namespace string) *autoscaling.HorizontalPodAutoscaler {
 	hpa := autoscaling.HorizontalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   deploymentName,
-			Labels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
+			Name:      deploymentName,
+			Namespace: namespace,
+			Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
 		},
 		Spec: autoscaling.HorizontalPodAutoscalerSpec{
 			ScaleTargetRef: autoscaling.CrossVersionObjectReference{
@@ -341,7 +344,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 
 			// Add HPA if needed
 			if cSpec.HpaSpec != nil {
-				c.hpas = append(c.hpas, createHpa(cSpec, depName, seldonId))
+				c.hpas = append(c.hpas, createHpa(cSpec, depName, seldonId, namespace))
 			} else {
 				deploy.Spec.Replicas = &p.Replicas
 			}
@@ -516,6 +519,18 @@ func createHpas(r *ReconcileSeldonDeployment, components *components, instance *
 	return ready, nil
 }
 
+func jsonEquals(a,b interface{}) (bool,error) {
+	b1, err := json.Marshal(a)
+	if err != nil {
+		return false,err
+	}
+	b2, err := json.Marshal(b)
+	if err != nil {
+		return false,err
+	}
+	return bytes.Equal(b1,b2),nil
+}
+
 // Create Deployments specified in components.
 func createDeployments(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) (bool, error) {
 	ready := true
@@ -541,8 +556,22 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 			return ready, err
 		} else {
 			// Update the found object and write the result back if there are any changes
-			if !reflect.DeepEqual(deploy.Spec.Template.Spec, found.Spec.Template.Spec) {
+			jEquals,err := jsonEquals(deploy.Spec.Template.Spec, found.Spec.Template.Spec)
+			if err != nil {
+				return ready, err
+			}
+			//if !reflect.DeepEqual(deploy.Spec.Template.Spec, found.Spec.Template.Spec) {
+			if  !jEquals {
 				log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
+
+				jStr1, err := json.Marshal(deploy.Spec.Template.Spec.Containers[0].Resources)
+				fmt.Println(string(jStr1))
+				jStr2, err := json.Marshal(found.Spec.Template.Spec.Containers[0].Resources)
+				fmt.Println(string(jStr2))
+
+				if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Resources,found.Spec.Template.Spec.Containers[0].Resources) {
+					log.Info("Containers differ")
+				}
 
 				ready = false
 				found.Spec = deploy.Spec
