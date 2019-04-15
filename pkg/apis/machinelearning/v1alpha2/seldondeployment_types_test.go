@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha2
 
 import (
+	"fmt"
+	"k8s.io/api/core/v1"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -31,6 +33,36 @@ func TestCleanImageName(t *testing.T) {
 	if name2 != "ab-c" {
 		t.Fatalf("should be abc: %s", name2)
 	}
+}
+
+func TestCleanDeploymentName(t *testing.T) {
+	mlDep := &SeldonDeployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "mymodel",
+		},
+		Spec: SeldonDeploymentSpec{
+			Name: "mymodel",
+			Predictors: []PredictorSpec{
+				{
+					Name: "mymodel",
+					ComponentSpecs: []*SeldonPodSpec{
+						&SeldonPodSpec{
+							Spec: v1.PodSpec{
+								Containers: []v1.Container{
+									{
+										Name:  "classifier",
+										Image: "seldonio/mock_classifier:1.0",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	name := GetDeploymentName(mlDep, mlDep.Spec.Predictors[0], mlDep.Spec.Predictors[0].ComponentSpecs[0])
+	fmt.Println(name)
 }
 
 func TestStorageSeldonDeployment(t *testing.T) {

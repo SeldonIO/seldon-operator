@@ -18,6 +18,7 @@ package defaultserver
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
 
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -47,27 +48,23 @@ func Add(mgr manager.Manager) error {
 
 	svr, err := webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
 		// TODO(user): change the configuration of ServerOptions based on your need.
-		Port:             9876,
-		CertDir:          "/tmp/cert",
+		Port:    9876,
+		CertDir: "/tmp/cert",
 		BootstrapOptions: &webhook.BootstrapOptions{
 
-			/*
-				Secret: &types.NamespacedName{
-					Namespace: ns,
-					Name:      secretName,
+			Secret: &types.NamespacedName{
+				Namespace: ns,
+				Name:      secretName,
+			},
+
+			Service: &webhook.Service{
+				Namespace: ns,
+				Name:      "webhook-server-service",
+				// Selectors should select the pods that runs this webhook server.
+				Selectors: map[string]string{
+					"control-plane": "controller-manager",
 				},
-
-
-				Service: &webhook.Service{
-					Namespace: ns,
-					Name:      "webhook-server-service",
-					// Selectors should select the pods that runs this webhook server.
-					Selectors: map[string]string{
-						"control-plane": "controller-manager",
-					},
-				},
-			*/
-
+			},
 		},
 	})
 	if err != nil {

@@ -57,7 +57,8 @@ func containerHash(podSpec *SeldonPodSpec) string {
 		s = append(s, c.Name)
 		s = append(s, c.Image)
 	}
-	return hash(strings.Join(s, ":"))[:7]
+	key := strings.Join(s, ":") + ";"
+	return hash(key)[:7]
 }
 
 func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
@@ -150,7 +151,7 @@ type PredictorSpec struct {
 
 type SvcOrchSpec struct {
 	Resources *v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,1,opt,name=resources"`
-	Env       *v1.EnvVar               `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
+	Env       []*v1.EnvVar             `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
 }
 
 type SeldonPodSpec struct {
@@ -168,7 +169,7 @@ type SeldonHpaSpec struct {
 type PredictiveUnitType string
 
 const (
-	UNKNOWN_TYPE       PredictiveUnitType = "UNKOWN_TYPE"
+	UNKNOWN_TYPE       PredictiveUnitType = "UNKNOWN_TYPE"
 	ROUTER             PredictiveUnitType = "ROUTER"
 	COMBINER           PredictiveUnitType = "COMBINER"
 	MODEL              PredictiveUnitType = "MODEL"

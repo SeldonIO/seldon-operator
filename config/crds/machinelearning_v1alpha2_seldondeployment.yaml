@@ -108,7 +108,9 @@ spec:
                   svcOrchSpec:
                     properties:
                       env:
-                        type: object
+                        items:
+                          type: object
+                        type: array
                       resources:
                         type: object
                     type: object

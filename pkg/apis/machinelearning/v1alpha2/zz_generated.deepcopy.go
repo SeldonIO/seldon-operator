@@ -348,8 +348,14 @@ func (in *SvcOrchSpec) DeepCopyInto(out *SvcOrchSpec) {
 	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
-		*out = new(v1.EnvVar)
-		(*in).DeepCopyInto(*out)
+		*out = make([]*v1.EnvVar, len(*in))
+		for i := range *in {
+			if (*in)[i] != nil {
+				in, out := &(*in)[i], &(*out)[i]
+				*out = new(v1.EnvVar)
+				(*in).DeepCopyInto(*out)
+			}
+		}
 	}
 	return
 }

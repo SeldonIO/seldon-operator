@@ -22,6 +22,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"net/http"
+	"os"
 	"strconv"
 
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
@@ -84,8 +85,16 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 }
 
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
-	// TODO(user): implement your admission logic
 	var nextPortNum int32 = 9000
+	if env_preditive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
+		portNum, err := strconv.Atoi(env_preditive_unit_service_port)
+		if err != nil {
+			return err
+		} else {
+			nextPortNum = int32(portNum)
+		}
+	}
+
 	var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
 
 	portMap := map[string]int32{}
@@ -94,6 +103,10 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 	}
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
+		if p.Graph.Type == nil {
+			ty := machinelearningv1alpha2.UNKNOWN_TYPE
+			p.Graph.Type = &ty
+		}
 		addDefaultsToGraph(p.Graph)
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
@@ -119,7 +132,7 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
-				con := &cSpec.Spec.Containers[0]
+				con := &cSpec.Spec.Containers[k]
 
 				if _, present := portMap[con.Name]; !present {
 					portMap[con.Name] = nextPortNum
@@ -162,7 +175,7 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 					existingPort := getPort(portType, con.Ports)
 					if existingPort == nil {
-						con.Ports = append(con.Ports, v1.ContainerPort{Name: "http", ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
+						con.Ports = append(con.Ports, v1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
 					} else {
 						portNum = existingPort.ContainerPort
 					}

@@ -46,6 +46,9 @@ import (
 )
 
 const (
+	ENV_DEFAULT_ENGINE_SERVER_PORT      = "ENGINE_SERVER_PORT"
+	ENV_DEFAULT_ENGINE_SERVER_GRPC_PORT = "ENGINE_SERVER_GRPC_PORT"
+
 	DEFAULT_ENGINE_CONTAINER_PORT = 8000
 	DEFAULT_ENGINE_GRPC_PORT      = 5001
 )
@@ -148,8 +151,17 @@ func getAnnotation(mlDep *machinelearningv1alpha2.SeldonDeployment, annotationKe
 }
 
 // Create the Container for the service orchestrator.
-func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec) (*corev1.Container, error) {
+func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port, engine_grpc_port int) (*corev1.Container, error) {
+	// Get engine user
 	var engineUser int64 = 8888
+	if engineUserEnv, ok := os.LookupEnv("ENGINE_CONTAINER_USER"); ok {
+		user, err := strconv.Atoi(engineUserEnv)
+		if err != nil {
+			return nil, err
+		} else {
+			engineUser = int64(user)
+		}
+	}
 	var procMount = corev1.DefaultProcMount
 	// get predictor as base64 encoded json
 	predictorB64, err := getEngineVarJson(p)
@@ -186,13 +198,13 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		Env: []corev1.EnvVar{
 			{Name: "ENGINE_PREDICTOR", Value: predictorB64},
 			{Name: "DEPLOYMENT_NAME", Value: mlDep.Spec.Name},
-			{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(DEFAULT_ENGINE_CONTAINER_PORT)},
-			{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(DEFAULT_ENGINE_GRPC_PORT)},
+			{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(engine_http_port)},
+			{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(engine_grpc_port)},
 			{Name: "JAVA_OPTS", Value: javaOpts},
 		},
 		Ports: []corev1.ContainerPort{
-			{ContainerPort: DEFAULT_ENGINE_CONTAINER_PORT, Protocol: corev1.ProtocolTCP},
-			{ContainerPort: DEFAULT_ENGINE_GRPC_PORT, Protocol: corev1.ProtocolTCP},
+			{ContainerPort: int32(engine_http_port), Protocol: corev1.ProtocolTCP},
+			{ContainerPort: int32(engine_grpc_port), Protocol: corev1.ProtocolTCP},
 			{ContainerPort: 8082, Name: "admin", Protocol: corev1.ProtocolTCP},
 			{ContainerPort: 9090, Name: "jmx", Protocol: corev1.ProtocolTCP},
 		},
@@ -211,24 +223,31 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			TimeoutSeconds:      2},
 		Lifecycle: &corev1.Lifecycle{
 			PreStop: &corev1.Handler{
-				Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "curl 127.0.0.1:" + strconv.Itoa(DEFAULT_ENGINE_GRPC_PORT) + "/pause && /bin/sleep 10"}},
+				Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "curl 127.0.0.1:" + strconv.Itoa(engine_http_port) + "/pause && /bin/sleep 10"}},
 			},
 		},
 		Resources: *engineResources,
+	}
+
+	// Environment vars if specified
+	if p.SvcOrchSpec.Env != nil {
+		for _, env := range p.SvcOrchSpec.Env {
+			c.Env = append(c.Env, *env)
+		}
 	}
 
 	return &c, nil
 }
 
 // Create the service orchestrator.
-func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, seldonId string) (*appsv1.Deployment, error) {
+func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, seldonId string, engine_http_port, engine_grpc_port int) (*appsv1.Deployment, error) {
 
 	var terminationGracePeriodSecs = int64(20)
 	var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
 
 	depName := machinelearningv1alpha2.GetServiceOrchestratorName(mlDep, p)
 
-	con, err := createEngineContainer(mlDep, p)
+	con, err := createEngineContainer(mlDep, p, engine_http_port, engine_grpc_port)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +256,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 			Name:        depName,
 			Namespace:   getNamespace(mlDep),
 			Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
-			Annotations: p.Annotations,
+			Annotations: mlDep.Spec.Annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
@@ -247,8 +266,8 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
 					Annotations: map[string]string{
-						"prometheus.io/path":   "/prometheus",
-						"prometheus.io/port":   strconv.Itoa(DEFAULT_ENGINE_CONTAINER_PORT),
+						"prometheus.io/path":   getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus"),
+						"prometheus.io/port":   strconv.Itoa(engine_http_port),
 						"prometheus.io/scrape": "true",
 					},
 				},
@@ -259,7 +278,6 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 					TerminationGracePeriodSeconds: &terminationGracePeriodSecs,
 					DNSPolicy:                     corev1.DNSClusterFirst,
 					SchedulerName:                 "default-scheduler",
-					ServiceAccountName:            getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon"),
 					Volumes: []corev1.Volume{
 						{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
 							{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}},
@@ -272,6 +290,12 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 			Replicas: &p.Replicas,
 		},
 	}
+
+	// Add a particular service account rather than default for the engine
+	if svcAccount, ok := os.LookupEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME"); ok {
+		deploy.Spec.Template.Spec.ServiceAccountName = svcAccount
+	}
+
 	return deploy, nil
 }
 
@@ -304,13 +328,34 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	c := components{}
 	seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
 	namespace := getNamespace(mlDep)
+	var err error
+	// Get engine http port from environment or use default
+	var engine_http_port = DEFAULT_ENGINE_CONTAINER_PORT
+	var env_engine_http_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_PORT, "")
+	if env_engine_http_port != "" {
+		engine_http_port, err = strconv.Atoi(env_engine_http_port)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Get engine grpc port from environment or use default
+	var engine_grpc_port = DEFAULT_ENGINE_GRPC_PORT
+	var env_engine_grpc_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_GRPC_PORT, "")
+	if env_engine_grpc_port != "" {
+		engine_grpc_port, err = strconv.Atoi(env_engine_grpc_port)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
 
 		// Add engine deployment if separate
 		_, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]
 		if hasSeparateEnginePod {
-			deploy, err := createEngineDeployment(mlDep, &p, seldonId)
+			deploy, err := createEngineDeployment(mlDep, &p, seldonId, engine_http_port, engine_grpc_port)
 			if err != nil {
 				return nil, err
 			}
@@ -326,7 +371,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 					Name:        depName,
 					Namespace:   namespace,
 					Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
-					Annotations: p.Annotations,
+					Annotations: mlDep.Spec.Annotations,
 				},
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
@@ -334,7 +379,8 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
+							Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
+							Annotations: mlDep.Spec.Annotations,
 						},
 						Spec: cSpec.Spec,
 					},
@@ -351,18 +397,21 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 
 			// Add service orchestrator to first deployment if needed
 			if j == 0 && !hasSeparateEnginePod {
-				engineContainer, err := createEngineContainer(mlDep, &p)
+				engineContainer, err := createEngineContainer(mlDep, &p, engine_http_port, engine_grpc_port)
 				if err != nil {
 					return nil, err
 				}
 				deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *engineContainer)
-				deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
-				deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
-				deploy.Spec.Template.Annotations = map[string]string{
-					"prometheus.io/path":   "/prometheus",
-					"prometheus.io/port":   strconv.Itoa(DEFAULT_ENGINE_CONTAINER_PORT),
-					"prometheus.io/scrape": "true",
+				//deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
+				//deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
+				//deploy.Spec.Template.Annotations = map[string]string{}
+				if deploy.Spec.Template.Annotations == nil {
+					deploy.Spec.Template.Annotations = make(map[string]string)
 				}
+				deploy.Spec.Template.Annotations["prometheus.io/path"] = "/prometheus"
+				deploy.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(engine_http_port)
+				deploy.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
+
 				deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
@@ -413,7 +462,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	}
 
 	//Create top level Service
-	ambassadorConfig, err := getAmbassadorConfigs(mlDep, seldonId)
+	ambassadorConfig, err := getAmbassadorConfigs(mlDep, seldonId, engine_http_port, engine_grpc_port)
 	if err != nil {
 		return nil, err
 	}
@@ -427,8 +476,8 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
-				{Protocol: corev1.ProtocolTCP, Port: DEFAULT_ENGINE_CONTAINER_PORT, TargetPort: intstr.FromInt(DEFAULT_ENGINE_CONTAINER_PORT), Name: "http"},
-				{Protocol: corev1.ProtocolTCP, Port: DEFAULT_ENGINE_GRPC_PORT, TargetPort: intstr.FromInt(DEFAULT_ENGINE_GRPC_PORT), Name: "grpc"},
+				{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
+				{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
 			},
 			Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId},
 			SessionAffinity: corev1.ServiceAffinityNone,
@@ -519,16 +568,16 @@ func createHpas(r *ReconcileSeldonDeployment, components *components, instance *
 	return ready, nil
 }
 
-func jsonEquals(a,b interface{}) (bool,error) {
+func jsonEquals(a, b interface{}) (bool, error) {
 	b1, err := json.Marshal(a)
 	if err != nil {
-		return false,err
+		return false, err
 	}
 	b2, err := json.Marshal(b)
 	if err != nil {
-		return false,err
+		return false, err
 	}
-	return bytes.Equal(b1,b2),nil
+	return bytes.Equal(b1, b2), nil
 }
 
 // Create Deployments specified in components.
@@ -556,12 +605,12 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 			return ready, err
 		} else {
 			// Update the found object and write the result back if there are any changes
-			jEquals,err := jsonEquals(deploy.Spec.Template.Spec, found.Spec.Template.Spec)
+			jEquals, err := jsonEquals(deploy.Spec.Template.Spec, found.Spec.Template.Spec)
 			if err != nil {
 				return ready, err
 			}
 			//if !reflect.DeepEqual(deploy.Spec.Template.Spec, found.Spec.Template.Spec) {
-			if  !jEquals {
+			if !jEquals {
 				log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
 
 				jStr1, err := json.Marshal(deploy.Spec.Template.Spec.Containers[0].Resources)
@@ -569,7 +618,7 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				jStr2, err := json.Marshal(found.Spec.Template.Spec.Containers[0].Resources)
 				fmt.Println(string(jStr2))
 
-				if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Resources,found.Spec.Template.Spec.Containers[0].Resources) {
+				if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Resources, found.Spec.Template.Spec.Containers[0].Resources) {
 					log.Info("Containers differ")
 				}
 
