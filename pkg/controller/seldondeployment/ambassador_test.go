@@ -18,7 +18,7 @@ func TestAmbassadorBasic(t *testing.T) {
 	fmt.Printf("%s\n\n", s)
 	parts := strings.Split(s, "---\n")[1:]
 
-	if len(parts) != 4 {
+	if len(parts) != 2 {
 		t.Fatalf("Bad number of configs returned %d", len(parts))
 	}
 
@@ -34,7 +34,7 @@ func TestAmbassadorBasic(t *testing.T) {
 		if len(c.Headers) > 0 {
 			t.Fatalf("Found headers")
 		}
-		if c.Prefix != "/seldon/mymodel/" {
+		if c.Prefix != "/seldon/default/mymodel/" {
 			t.Fatalf("Found bad prefix %s", c.Prefix)
 		}
 	}

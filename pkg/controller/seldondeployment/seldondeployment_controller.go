@@ -368,10 +368,9 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			depName := machinelearningv1alpha2.GetDeploymentName(mlDep, p, cSpec)
 			deploy := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        depName,
-					Namespace:   namespace,
-					Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
-					Annotations: mlDep.Spec.Annotations,
+					Name:      depName,
+					Namespace: namespace,
+					Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
 				},
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
@@ -408,7 +407,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				if deploy.Spec.Template.Annotations == nil {
 					deploy.Spec.Template.Annotations = make(map[string]string)
 				}
-				deploy.Spec.Template.Annotations["prometheus.io/path"] = "/prometheus"
+				//overwrite annotations with predictor annotations
+				for _, ann := range p.Annotations {
+					deploy.Spec.Template.Annotations[ann] = p.Annotations[ann]
+				}
+				// Add prometheus annotations
+				deploy.Spec.Template.Annotations["prometheus.io/path"] = getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus")
 				deploy.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(engine_http_port)
 				deploy.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
 
@@ -461,18 +465,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 		}
 	}
 
-	//Create top level Service
-	ambassadorConfig, err := getAmbassadorConfigs(mlDep, seldonId, engine_http_port, engine_grpc_port)
-	if err != nil {
-		return nil, err
-	}
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      seldonId,
 			Namespace: namespace,
 			Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId,
 				machinelearningv1alpha2.Label_seldon_id: mlDep.Spec.Name},
-			Annotations: map[string]string{"getambassador.io/config": ambassadorConfig},
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -484,6 +482,17 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			Type:            corev1.ServiceTypeClusterIP,
 		},
 	}
+
+	if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
+		svc.Annotations = make(map[string]string)
+		//Create top level Service
+		ambassadorConfig, err := getAmbassadorConfigs(mlDep, seldonId, engine_http_port, engine_grpc_port)
+		if err != nil {
+			return nil, err
+		}
+		svc.Annotations["getambassador.io/config"] = ambassadorConfig
+	}
+
 	if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
 		log.Info("Creating Headless SVC")
 		svc.Spec.ClusterIP = "None"

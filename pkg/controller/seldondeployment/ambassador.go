@@ -32,13 +32,13 @@ type AmbassadorConfig struct {
 	TimeoutMs    int               `yaml:"timeout_ms"`
 	Headers      map[string]string `yaml:"headers,omitempty"`
 	RegexHeaders map[string]string `yaml:"regex_headers,omitempty"`
-	Weight       string            `yaml:"weight,omitempty"`
+	Weight       int               `yaml:"weight,omitempty"`
 	Shadow       *bool             `yaml:"shadow,omitempty"`
 }
 
 // Return a REST configuration for Ambassador with optional custom settings.
 func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
-	isNamespaced bool,
+	addNamespace bool,
 	serviceName string,
 	serviceNameExternal string,
 	customHeader string,
@@ -62,9 +62,17 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Prefix:     "/seldon/" + serviceNameExternal + "/",
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_http_port),
 		TimeoutMs:  timeout,
-		Weight:     weight,
 	}
-	if isNamespaced {
+
+	if weight != "" {
+		weightVal, err := strconv.Atoi(weight)
+		if err != nil {
+			return "", nil
+		}
+		c.Weight = weightVal
+	}
+
+	if addNamespace {
 		c.Name = "seldon_" + namespace + "_" + mlDep.ObjectMeta.Name + "_rest_mapping"
 		c.Prefix = "/seldon/" + namespace + "/" + serviceNameExternal + "/"
 	}
@@ -72,7 +80,9 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		headers := strings.Split(customHeader, ":")
 		elementMap := make(map[string]string)
 		for i := 0; i < len(headers); i += 2 {
-			elementMap[headers[i]] = headers[i+1]
+			key := strings.TrimSpace(headers[i])
+			val := strings.TrimSpace(headers[i+1])
+			elementMap[key] = val
 		}
 		c.Headers = elementMap
 	}
@@ -80,7 +90,9 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		headers := strings.Split(customHeader, ":")
 		elementMap := make(map[string]string)
 		for i := 0; i < len(headers); i += 2 {
-			elementMap[headers[i]] = headers[i+1]
+			key := strings.TrimSpace(headers[i])
+			val := strings.TrimSpace(headers[i+1])
+			elementMap[key] = val
 		}
 		c.RegexHeaders = elementMap
 	}
@@ -97,7 +109,7 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 
 // Return a gRPC configuration for Ambassador with optional custom settings.
 func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
-	isNamespaced bool,
+	addNamespace bool,
 	serviceName string,
 	serviceNameExternal string,
 	customHeader string,
@@ -125,23 +137,37 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Headers:    map[string]string{"seldon": serviceNameExternal},
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		TimeoutMs:  timeout,
-		Weight:     weight,
 	}
-	if isNamespaced {
+
+	if weight != "" {
+		weightVal, err := strconv.Atoi(weight)
+		if err != nil {
+			return "", nil
+		}
+		c.Weight = weightVal
+	}
+
+	if addNamespace {
 		c.Headers["namespace"] = namespace
 		c.Name = "seldon_" + namespace + "_" + mlDep.ObjectMeta.Name + "_grpc_mapping"
 	}
 	if customHeader != "" {
 		headers := strings.Split(customHeader, ":")
 		for i := 0; i < len(headers); i += 2 {
-			c.Headers[headers[i]] = headers[i+1]
+			key := strings.TrimSpace(headers[i])
+			val := strings.TrimSpace(headers[i+1])
+			c.Headers[key] = val
 		}
 	}
 	if customRegexHeader != "" {
-		headers := strings.Split(customRegexHeader, ":")
+		headers := strings.Split(customHeader, ":")
+		elementMap := make(map[string]string)
 		for i := 0; i < len(headers); i += 2 {
-			c.RegexHeaders[headers[i]] = headers[i+1]
+			key := strings.TrimSpace(headers[i])
+			val := strings.TrimSpace(headers[i+1])
+			elementMap[key] = val
 		}
+		c.RegexHeaders = elementMap
 	}
 	if shadowing != "" {
 		shadow := true
@@ -170,25 +196,25 @@ func getAmbassadorConfigs(mlDep *machinelearningv1alpha2.SeldonDeployment, servi
 		customHeader := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_HEADER, "")
 		customRegexHeader := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_REGEX_HEADER, "")
 
-		cRestGlobal, err := getAmbassadorRestConfig(mlDep, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port)
+		cRestGlobal, err := getAmbassadorRestConfig(mlDep, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port)
 		if err != nil {
 			return "", err
 		}
-		cGrpcGlobal, err := getAmbassadorGrpcConfig(mlDep, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port)
+		cGrpcGlobal, err := getAmbassadorGrpcConfig(mlDep, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port)
 		if err != nil {
 			return "", err
 		}
-		cRestNamespaced, err := getAmbassadorRestConfig(mlDep, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port)
-		if err != nil {
-			return "", err
-		}
-
-		cGrpcNamespaced, err := getAmbassadorGrpcConfig(mlDep, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port)
+		cRestNamespaced, err := getAmbassadorRestConfig(mlDep, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port)
 		if err != nil {
 			return "", err
 		}
 
-		if getEnv("SELDON_CLUSTER_MANAGER_SINGLE_NAMESPACE", "true") == "true" {
+		cGrpcNamespaced, err := getAmbassadorGrpcConfig(mlDep, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port)
+		if err != nil {
+			return "", err
+		}
+
+		if getEnv("AMBASSADOR_SINGLE_NAMESPACE", "false") == "true" {
 			return YAML_SEP + cRestGlobal + YAML_SEP + cGrpcGlobal + YAML_SEP + cRestNamespaced + YAML_SEP + cGrpcNamespaced, nil
 		} else {
 			return YAML_SEP + cRestGlobal + YAML_SEP + cGrpcGlobal, nil
