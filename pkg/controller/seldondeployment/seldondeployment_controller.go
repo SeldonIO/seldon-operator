@@ -255,16 +255,16 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        depName,
 			Namespace:   getNamespace(mlDep),
-			Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
+			Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
 			Annotations: mlDep.Spec.Annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
+				MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
+					Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, "app": depName},
 					Annotations: map[string]string{
 						"prometheus.io/path":   getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus"),
 						"prometheus.io/port":   strconv.Itoa(engine_http_port),
@@ -470,7 +470,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			Name:      seldonId,
 			Namespace: namespace,
 			Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId,
-				machinelearningv1alpha2.Label_seldon_id: mlDep.Spec.Name},
+				machinelearningv1alpha2.Label_seldon_id: seldonId},
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -655,8 +655,8 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				if err != nil {
 					return ready, err
 				}
-
-				if found.Status.UnavailableReplicas > 0 {
+				log.Info("Deployment status ", "name", found.Name, "status", found.Status)
+				if found.Status.ReadyReplicas == 0 || found.Status.UnavailableReplicas > 0 {
 					ready = false
 				}
 			}
@@ -666,9 +666,12 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 	// Clean up any old deployments
 	if ready {
 		statusCopy := instance.Status.DeepCopy()
+		//delete from copied status the current expected deployments by name
 		for _, deploy := range components.deployments {
 			delete(statusCopy.DeploymentStatus, deploy.Name)
 		}
+		// Any deployments left in status should be removed as they are not part of the current graph
+		//TODO delete services
 		for k := range statusCopy.DeploymentStatus {
 			found := &appsv1.Deployment{}
 			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)

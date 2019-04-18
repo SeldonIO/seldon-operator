@@ -61,6 +61,15 @@ func containerHash(podSpec *SeldonPodSpec) string {
 	return hash(key)[:7]
 }
 
+func createPredictorHash(p *PredictorSpec) string {
+	s := []string{}
+	for i := 0; i < len(p.ComponentSpecs); i++ {
+		s = append(s, containerHash(p.ComponentSpecs[i]))
+	}
+	key := strings.Join(s, ",") + ","
+	return hash(key)[:7]
+}
+
 func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
 	return mlDep.Spec.Name + "-" + mlDep.ObjectMeta.Name
 }
@@ -79,7 +88,7 @@ func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, pod
 }
 
 func GetServiceOrchestratorName(mlDep *SeldonDeployment, p *PredictorSpec) string {
-	svcOrchName := mlDep.Spec.Name + "-" + p.Name + "-svc-orch"
+	svcOrchName := mlDep.Spec.Name + "-" + p.Name + "-svc-orch" + "-" + createPredictorHash(p)
 	if len(svcOrchName) > 63 {
 		return "seldon-" + hash(svcOrchName)
 	} else {
