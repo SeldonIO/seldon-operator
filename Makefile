@@ -1,6 +1,7 @@
+LOCAL_PRIVATE_REPO=127.0.0.1:5000
 
 # Image URL to use all building/pushing image targets
-IMG ?= seldonio/seldon-core-operator:0.1
+IMG ?= seldonio/seldon-core-operator:0.2.7-SNAPSHOT
 
 all: test manager
 
@@ -60,3 +61,7 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+docker-push-local-private:
+	docker tag $(IMG) $(LOCAL_PRIVATE_REPO)/$(IMG)
+	docker push $(LOCAL_PRIVATE_REPO)/$(IMG)
