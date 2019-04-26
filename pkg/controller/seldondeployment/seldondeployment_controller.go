@@ -264,7 +264,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, "app": depName},
+					Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
 					Annotations: map[string]string{
 						"prometheus.io/path":   getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus"),
 						"prometheus.io/port":   strconv.Itoa(engine_http_port),
@@ -294,6 +294,12 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 	// Add a particular service account rather than default for the engine
 	if svcAccount, ok := os.LookupEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME"); ok {
 		deploy.Spec.Template.Spec.ServiceAccountName = svcAccount
+	}
+
+	// add predictor labels
+	for k, v := range p.Labels {
+		deploy.ObjectMeta.Labels[k] = v
+		deploy.Spec.Template.ObjectMeta.Labels[k] = v
 	}
 
 	return deploy, nil
@@ -419,6 +425,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
+
+				// add predictor labels
+				for k, v := range p.Labels {
+					deploy.ObjectMeta.Labels[k] = v
+					deploy.Spec.Template.ObjectMeta.Labels[k] = v
+				}
 			}
 
 			// create services for each container
