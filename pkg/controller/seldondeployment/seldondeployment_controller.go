@@ -110,9 +110,17 @@ type ReconcileSeldonDeployment struct {
 }
 
 type components struct {
-	deployments []*appsv1.Deployment
-	services    []*corev1.Service
-	hpas        []*autoscaling.HorizontalPodAutoscaler
+	serviceDetails map[string]*machinelearningv1alpha2.ServiceStatus
+	deployments    []*appsv1.Deployment
+	services       []*corev1.Service
+	hpas           []*autoscaling.HorizontalPodAutoscaler
+}
+
+type serviceDetails struct {
+	svcName        string
+	deploymentName string
+	svcUrl         string
+	ambassadorUrl  string
 }
 
 // Get the Namespace from the SeldonDeployment. Returns "default" if none found.
@@ -278,6 +286,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 					TerminationGracePeriodSeconds: &terminationGracePeriodSecs,
 					DNSPolicy:                     corev1.DNSClusterFirst,
 					SchedulerName:                 "default-scheduler",
+					SecurityContext:               &corev1.PodSecurityContext{},
 					Volumes: []corev1.Volume{
 						{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
 							{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}},
@@ -294,6 +303,10 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 	// Add a particular service account rather than default for the engine
 	if svcAccount, ok := os.LookupEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME"); ok {
 		deploy.Spec.Template.Spec.ServiceAccountName = svcAccount
+		deploy.Spec.Template.Spec.DeprecatedServiceAccount = svcAccount
+	} else {
+		deploy.Spec.Template.Spec.ServiceAccountName = "default"
+		deploy.Spec.Template.Spec.DeprecatedServiceAccount = "default"
 	}
 
 	// add predictor labels
@@ -332,6 +345,7 @@ func createHpa(podSpec *machinelearningv1alpha2.SeldonPodSpec, deploymentName st
 // Create all the components (Deployments, Services etc)
 func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
 	c := components{}
+	c.serviceDetails = map[string]*machinelearningv1alpha2.ServiceStatus{}
 	seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
 	namespace := getNamespace(mlDep)
 	var err error
@@ -442,8 +456,14 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				var portType string
 				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
 					portType = "http"
+					c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
+						SvcName:      containerServiceValue,
+						HttpEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
 				} else {
 					portType = "grpc"
+					c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
+						SvcName:      containerServiceValue,
+						GrpcEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
 				}
 				svc := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
@@ -510,6 +530,11 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 		svc.Spec.ClusterIP = "None"
 	}
 	c.services = append(c.services, svc)
+	c.serviceDetails[seldonId] = &machinelearningv1alpha2.ServiceStatus{
+		SvcName:      seldonId,
+		HttpEndpoint: seldonId + "." + namespace + ":" + strconv.Itoa(engine_http_port),
+		GrpcEndpoint: seldonId + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
+	}
 
 	return &c, nil
 }
@@ -545,10 +570,23 @@ func createServices(r *ReconcileSeldonDeployment, components *components, instan
 				}
 			} else {
 				log.Info("Found identical Service", "namespace", found.Namespace, "name", found.Name, "status", found.Status)
+
+				if instance.Status.ServiceStatus == nil {
+					instance.Status.ServiceStatus = map[string]machinelearningv1alpha2.ServiceStatus{}
+				}
+
+				if _, ok := instance.Status.ServiceStatus[found.Name]; !ok {
+					instance.Status.ServiceStatus[found.Name] = *components.serviceDetails[found.Name]
+					err = r.Status().Update(context.Background(), instance)
+					if err != nil {
+						return ready, err
+					}
+				}
 			}
 		}
 
 	}
+
 	return ready, nil
 }
 
@@ -634,9 +672,9 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 			if !jEquals {
 				log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
 
-				jStr1, err := json.Marshal(deploy.Spec.Template.Spec.Containers[0].Resources)
+				jStr1, err := json.Marshal(deploy.Spec.Template.Spec)
 				fmt.Println(string(jStr1))
-				jStr2, err := json.Marshal(found.Spec.Template.Spec.Containers[0].Resources)
+				jStr2, err := json.Marshal(found.Spec.Template.Spec)
 				fmt.Println(string(jStr2))
 
 				if !reflect.DeepEqual(deploy.Spec.Template.Spec.Containers[0].Resources, found.Spec.Template.Spec.Containers[0].Resources) {
@@ -653,19 +691,24 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 			} else {
 				log.Info("Found identical deployment", "namespace", found.Namespace, "name", found.Name, "status", found.Status)
 				deploymentStatus, present := instance.Status.DeploymentStatus[found.Name]
+
 				if !present {
 					deploymentStatus = machinelearningv1alpha2.DeploymentStatus{}
 				}
-				deploymentStatus.Replicas = found.Status.Replicas
-				deploymentStatus.AvailableReplicas = found.Status.AvailableReplicas
-				if instance.Status.DeploymentStatus == nil {
-					instance.Status.DeploymentStatus = map[string]machinelearningv1alpha2.DeploymentStatus{}
-				}
-				instance.Status.DeploymentStatus[found.Name] = deploymentStatus
 
-				err = r.Status().Update(context.Background(), instance)
-				if err != nil {
-					return ready, err
+				if deploymentStatus.Replicas != found.Status.Replicas || deploymentStatus.AvailableReplicas != found.Status.AvailableReplicas {
+					deploymentStatus.Replicas = found.Status.Replicas
+					deploymentStatus.AvailableReplicas = found.Status.AvailableReplicas
+					if instance.Status.DeploymentStatus == nil {
+						instance.Status.DeploymentStatus = map[string]machinelearningv1alpha2.DeploymentStatus{}
+					}
+
+					instance.Status.DeploymentStatus[found.Name] = deploymentStatus
+
+					err = r.Status().Update(context.Background(), instance)
+					if err != nil {
+						return ready, err
+					}
 				}
 				log.Info("Deployment status ", "name", found.Name, "status", found.Status)
 				if found.Status.ReadyReplicas == 0 || found.Status.UnavailableReplicas > 0 {
@@ -682,8 +725,10 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		for _, deploy := range components.deployments {
 			delete(statusCopy.DeploymentStatus, deploy.Name)
 		}
+		for k := range components.serviceDetails {
+			delete(statusCopy.ServiceStatus, k)
+		}
 		// Any deployments left in status should be removed as they are not part of the current graph
-		//TODO delete services
 		for k := range statusCopy.DeploymentStatus {
 			found := &appsv1.Deployment{}
 			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
@@ -694,6 +739,26 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				log.Info("Deleting old deployment ", "name", k)
 				// clean up status
 				delete(instance.Status.DeploymentStatus, k)
+				err = r.Status().Update(context.Background(), instance)
+				if err != nil {
+					return ready, err
+				}
+				err := r.Delete(context.TODO(), found)
+				if err != nil {
+					return ready, err
+				}
+			}
+		}
+		for k := range statusCopy.ServiceStatus {
+			found := &corev1.Service{}
+			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
+			if err != nil && errors.IsNotFound(err) {
+				log.Error(err, "Failed to find old service", "name", k)
+				return ready, err
+			} else {
+				log.Info("Deleting old service ", "name", k)
+				// clean up status
+				delete(instance.Status.ServiceStatus, k)
 				err = r.Status().Update(context.Background(), instance)
 				if err != nil {
 					return ready, err

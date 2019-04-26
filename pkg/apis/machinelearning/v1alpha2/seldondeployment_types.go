@@ -253,13 +253,18 @@ type DeploymentStatus struct {
 	AvailableReplicas int32  `json:"availableReplicas,omitempty" protobuf:"string,5,opt,name=availableRelicas"`
 }
 
+type ServiceStatus struct {
+	SvcName      string `json:"svcName,omitempty" protobuf:"string,1,opt,name=svcName"`
+	HttpEndpoint string `json:"httpEndpoint,omitempty" protobuf:"string,2,opt,name=httpEndpoint"`
+	GrpcEndpoint string `json:"grpcEndpoint,omitempty" protobuf:"string,3,opt,name=grpcEndpoint"`
+}
+
 // SeldonDeploymentStatus defines the observed state of SeldonDeployment
 type SeldonDeploymentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 	State            string                      `json:"state,omitempty" protobuf:"string,1,opt,name=state"`
 	Description      string                      `json:"description,omitempty" protobuf:"string,2,opt,name=description"`
-	DeploymentStatus map[string]DeploymentStatus `json:"deploymentStatus,omitempty" protobuf:"bytes,3,opt,name=predictorStatus"`
+	DeploymentStatus map[string]DeploymentStatus `json:"deploymentStatus,omitempty" protobuf:"bytes,3,opt,name=deploymentStatus"`
+	ServiceStatus    map[string]ServiceStatus    `json:"serviceStatus,omitempty" protobuf:"bytes,4,opt,name=serviceStatus"`
 }
 
 // +genclient
