@@ -33,6 +33,7 @@ var (
 	builderMap = map[string]*builder.WebhookBuilder{}
 	// HandlerMap contains all admission webhook handlers.
 	HandlerMap = map[string][]admission.Handler{}
+	dev = true
 )
 
 // Add adds itself to the manager
@@ -46,12 +47,28 @@ func Add(mgr manager.Manager) error {
 		secretName = "webhook-server-secret"
 	}
 
-	svr, err := webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
-		// TODO(user): change the configuration of ServerOptions based on your need.
-		Port:             9876,
-		CertDir:          "/tmp/cert",
-		BootstrapOptions: &webhook.BootstrapOptions{
-			
+	var svr *webhook.Server
+	var err error
+	if dev {
+		svr, err = webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
+			// TODO(user): change the configuration of ServerOptions based on your need.
+			Port:    9876,
+			CertDir: "/tmp/cert",
+			BootstrapOptions: &webhook.BootstrapOptions{
+
+
+			},
+		})
+		if err != nil {
+			return err
+		}
+	} else {
+		svr, err = webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
+			// TODO(user): change the configuration of ServerOptions based on your need.
+			Port:    9876,
+			CertDir: "/tmp/cert",
+			BootstrapOptions: &webhook.BootstrapOptions{
+
 				Secret: &types.NamespacedName{
 					Namespace: ns,
 					Name:      secretName,
@@ -65,14 +82,12 @@ func Add(mgr manager.Manager) error {
 						"control-plane": "controller-manager",
 					},
 				},
-
-
-		},
-	})
-	if err != nil {
-		return err
+			},
+		})
+		if err != nil {
+			return err
+		}
 	}
-
 	var webhooks []webhook.Webhook
 	for k, builder := range builderMap {
 		handlers, ok := HandlerMap[k]

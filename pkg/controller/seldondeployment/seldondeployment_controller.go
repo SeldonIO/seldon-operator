@@ -231,7 +231,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			TimeoutSeconds:      2},
 		Lifecycle: &corev1.Lifecycle{
 			PreStop: &corev1.Handler{
-				Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "curl 127.0.0.1:" + strconv.Itoa(engine_http_port) + "/pause && /bin/sleep 10"}},
+				Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "curl 127.0.0.1:" + strconv.Itoa(engine_http_port) + "/pause; /bin/sleep 10"}},
 			},
 		},
 		Resources: *engineResources,
@@ -728,44 +728,49 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		for k := range components.serviceDetails {
 			delete(statusCopy.ServiceStatus, k)
 		}
+		remaining := len(statusCopy.DeploymentStatus)
 		// Any deployments left in status should be removed as they are not part of the current graph
 		for k := range statusCopy.DeploymentStatus {
 			found := &appsv1.Deployment{}
 			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
 			if err != nil && errors.IsNotFound(err) {
-				log.Error(err, "Failed to find old deployment", "name", k)
-				return ready, err
-			} else {
-				log.Info("Deleting old deployment ", "name", k)
+				log.Info("Failed to find old deployment - removing from status", "name", k)
 				// clean up status
 				delete(instance.Status.DeploymentStatus, k)
 				err = r.Status().Update(context.Background(), instance)
 				if err != nil {
 					return ready, err
 				}
+				return ready, err
+			} else {
+				log.Info("Deleting old deployment ", "name", k)
+
 				err := r.Delete(context.TODO(), found)
 				if err != nil {
 					return ready, err
 				}
 			}
 		}
-		for k := range statusCopy.ServiceStatus {
-			found := &corev1.Service{}
-			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
-			if err != nil && errors.IsNotFound(err) {
-				log.Error(err, "Failed to find old service", "name", k)
-				return ready, err
-			} else {
-				log.Info("Deleting old service ", "name", k)
-				// clean up status
-				delete(instance.Status.ServiceStatus, k)
-				err = r.Status().Update(context.Background(), instance)
-				if err != nil {
+		if remaining == 0 {
+			log.Info("Removing unused services")
+			for k := range statusCopy.ServiceStatus {
+				found := &corev1.Service{}
+				err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
+				if err != nil && errors.IsNotFound(err) {
+					log.Error(err, "Failed to find old service", "name", k)
 					return ready, err
-				}
-				err := r.Delete(context.TODO(), found)
-				if err != nil {
-					return ready, err
+				} else {
+					log.Info("Deleting old service ", "name", k)
+					// clean up status
+					delete(instance.Status.ServiceStatus, k)
+					err = r.Status().Update(context.Background(), instance)
+					if err != nil {
+						return ready, err
+					}
+					err := r.Delete(context.TODO(), found)
+					if err != nil {
+						return ready, err
+					}
 				}
 			}
 		}
