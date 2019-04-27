@@ -33,7 +33,7 @@ var (
 	builderMap = map[string]*builder.WebhookBuilder{}
 	// HandlerMap contains all admission webhook handlers.
 	HandlerMap = map[string][]admission.Handler{}
-	dev = true
+	dev = false
 )
 
 // Add adds itself to the manager
