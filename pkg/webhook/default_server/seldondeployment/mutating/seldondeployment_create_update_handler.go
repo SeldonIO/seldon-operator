@@ -86,6 +86,7 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
 	var nextPortNum int32 = 9000
+	var terminationGracePeriod int64 = 20
 	if env_preditive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
 		portNum, err := strconv.Atoi(env_preditive_unit_service_port)
 		if err != nil {
@@ -124,6 +125,8 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			if cSpec.Spec.SecurityContext == nil {
 				cSpec.Spec.SecurityContext = &corev1.PodSecurityContext{}
 			}
+
+			cSpec.Spec.TerminationGracePeriodSeconds = &terminationGracePeriod
 
 			//Add downwardAPI
 			cSpec.Spec.Volumes = append(cSpec.Spec.Volumes, corev1.Volume{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{
@@ -188,7 +191,7 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 					// Add livecycle probe
 					if con.Lifecycle == nil {
-						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 5"}}}}
+						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 20"}}}}
 					}
 
 					// Add Environment Variables
