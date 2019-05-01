@@ -751,7 +751,7 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				}
 			}
 		}
-		if remaining == 0 {
+		if remaining == 0 && false {
 			log.Info("Removing unused services")
 			for k := range statusCopy.ServiceStatus {
 				found := &corev1.Service{}
