@@ -191,7 +191,7 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 					// Add livecycle probe
 					if con.Lifecycle == nil {
-						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 20"}}}}
+						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 10"}}}}
 					}
 
 					// Add Environment Variables

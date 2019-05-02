@@ -33,7 +33,7 @@ var (
 	builderMap = map[string]*builder.WebhookBuilder{}
 	// HandlerMap contains all admission webhook handlers.
 	HandlerMap = map[string][]admission.Handler{}
-	dev = false
+	dev        = false
 )
 
 // Add adds itself to the manager
@@ -52,12 +52,9 @@ func Add(mgr manager.Manager) error {
 	if dev {
 		svr, err = webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
 			// TODO(user): change the configuration of ServerOptions based on your need.
-			Port:    9876,
-			CertDir: "/tmp/cert",
-			BootstrapOptions: &webhook.BootstrapOptions{
-
-
-			},
+			Port:             9876,
+			CertDir:          "/tmp/cert",
+			BootstrapOptions: &webhook.BootstrapOptions{},
 		})
 		if err != nil {
 			return err

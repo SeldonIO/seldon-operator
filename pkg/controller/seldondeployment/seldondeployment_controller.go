@@ -263,7 +263,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        depName,
 			Namespace:   getNamespace(mlDep),
-			Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
+			Labels:      map[string]string{machinelearningv1alpha2.Label_svc_orch: "true",machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
 			Annotations: mlDep.Spec.Annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -420,6 +420,8 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				if err != nil {
 					return nil, err
 				}
+				deploy.Labels[machinelearningv1alpha2.Label_svc_orch] = "true"
+
 				deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *engineContainer)
 				//deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
 				//deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
@@ -730,6 +732,20 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		}
 		remaining := len(statusCopy.DeploymentStatus)
 		// Any deployments left in status should be removed as they are not part of the current graph
+		svcOrchExists := false
+		for k := range statusCopy.DeploymentStatus {
+			found := &appsv1.Deployment{}
+			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
+			if err != nil && errors.IsNotFound(err) {
+
+			} else {
+				if _, ok := found.ObjectMeta.Labels[machinelearningv1alpha2.Label_svc_orch]; ok {
+					log.Info("Found existing svc-orch")
+					svcOrchExists = true
+					break
+				}
+			}
+		}
 		for k := range statusCopy.DeploymentStatus {
 			found := &appsv1.Deployment{}
 			err := r.Get(context.TODO(), types.NamespacedName{Name: k, Namespace: instance.Namespace}, found)
@@ -743,15 +759,26 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				}
 				return ready, err
 			} else {
-				log.Info("Deleting old deployment ", "name", k)
+				if svcOrchExists {
+					if _, ok := found.ObjectMeta.Labels[machinelearningv1alpha2.Label_svc_orch]; ok {
+						log.Info("Deleting old svc-orch deployment ", "name", k)
 
-				err := r.Delete(context.TODO(), found)
-				if err != nil {
-					return ready, err
+						err := r.Delete(context.TODO(), found, client.PropagationPolicy(metav1.DeletePropagationForeground))
+						if err != nil {
+							return ready, err
+						}
+					}
+				} else {
+					log.Info("Deleting old deployment (svc-orch does not exist)", "name", k)
+
+					err := r.Delete(context.TODO(), found, client.PropagationPolicy(metav1.DeletePropagationForeground))
+					if err != nil {
+						return ready, err
+					}
 				}
 			}
 		}
-		if remaining == 0 && false {
+		if remaining == 0  {
 			log.Info("Removing unused services")
 			for k := range statusCopy.ServiceStatus {
 				found := &corev1.Service{}

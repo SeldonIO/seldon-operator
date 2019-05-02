@@ -29,6 +29,7 @@ import (
 const (
 	Label_seldon_id  = "seldon-deployment-id"
 	Label_seldon_app = "seldon-app"
+	Label_svc_orch = "seldon-deployment-contains-svcorch"
 
 	PODINFO_VOLUME_NAME = "podinfo"
 	PODINFO_VOLUME_PATH = "/etc/podinfo"
