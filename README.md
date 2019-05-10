@@ -1,5 +1,9 @@
+# Seldon Core Go Controller
+A Go controller for the Seldon Core CRD
 
-## Create with KubeBuilder
+
+### Historical Notes
+This project was created with kubebuilder using the following commands.
 
 ```
 kubebuilder init --domain seldon.io --license apache2 --owner "The Seldon Authors"
