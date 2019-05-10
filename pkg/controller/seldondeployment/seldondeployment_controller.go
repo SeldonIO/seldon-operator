@@ -263,7 +263,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        depName,
 			Namespace:   getNamespace(mlDep),
-			Labels:      map[string]string{machinelearningv1alpha2.Label_svc_orch: "true",machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
+			Labels:      map[string]string{machinelearningv1alpha2.Label_svc_orch: "true", machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
 			Annotations: mlDep.Spec.Annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -405,6 +405,11 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 					},
 					Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
 				},
+			}
+
+			// add more annotations
+			for k, v := range cSpec.Metadata.Annotations {
+				deploy.Spec.Template.ObjectMeta.Annotations[k] = v
 			}
 
 			// Add HPA if needed
@@ -720,7 +725,11 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		}
 	}
 
-	// Clean up any old deployments
+	// Clean up any old deployments and services
+	// 1. Delete any svc-orchestroator deployments
+	// 2. Delete any other deployments
+	// 3. Delete any services
+	// Deletion is done in foreground so we wait for underlying pods to be removed
 	if ready {
 		statusCopy := instance.Status.DeepCopy()
 		//delete from copied status the current expected deployments by name
@@ -778,7 +787,7 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 				}
 			}
 		}
-		if remaining == 0  {
+		if remaining == 0 {
 			log.Info("Removing unused services")
 			for k := range statusCopy.ServiceStatus {
 				found := &corev1.Service{}
@@ -814,8 +823,8 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=v1,resources=services/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=v2beta1,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=v2beta1,resources=horizontalpodautoscalers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=machinelearning.seldon.io,resources=seldondeployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=machinelearning.seldon.io,resources=seldondeployments/status,verbs=get;update;patch
 func (r *ReconcileSeldonDeployment) Reconcile(request reconcile.Request) (reconcile.Result, error) {
