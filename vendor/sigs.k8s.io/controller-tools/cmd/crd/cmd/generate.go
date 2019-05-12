@@ -40,7 +40,7 @@ exist under the root-path.
 for PROJECT file, take its path as working directory, and fetch domain info from the file.
 `,
 	Example: "crd generate --domain k8s.io",
-	Run: func(_ *cobra.Command, _ []string) {
+	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Writing CRD files...")
 		if err := g.ValidateAndInitFields(); err != nil {
 			log.Fatal(err)
