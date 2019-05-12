@@ -78,6 +78,22 @@ func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 	return true, ""
 }
 
+func checkTraffic(mlDep *machinelearningv1alpha2.SeldonDeployment) (bool, string) {
+	var trafficSum int32 = 0
+	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
+		p := mlDep.Spec.Predictors[i]
+		trafficSum = trafficSum + p.Traffic
+	}
+	if trafficSum != 100 && len(mlDep.Spec.Predictors) > 1 {
+		return false, "Traffic must sum to 100 for multiple predictors"
+	}
+	if trafficSum > 0 && trafficSum < 100 && len(mlDep.Spec.Predictors) == 1 {
+		return false, "Traffic must sum be 100 for a single predictor when set"
+	}
+
+	return true, ""
+}
+
 func (h *SeldonDeploymentCreateUpdateHandler) validatingSeldonDeploymentFn(ctx context.Context, obj *machinelearningv1alpha2.SeldonDeployment) (bool, string, error) {
 
 	predictorNames := make(map[string]bool)
@@ -91,7 +107,10 @@ func (h *SeldonDeploymentCreateUpdateHandler) validatingSeldonDeploymentFn(ctx c
 		if !ok {
 			return false, reason, nil
 		}
-
+	}
+	ok, reason := checkTraffic(obj)
+	if !ok {
+		return false, reason, nil
 	}
 	return true, "allowed to be admitted", nil
 }

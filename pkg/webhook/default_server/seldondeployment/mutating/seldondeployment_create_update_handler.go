@@ -108,6 +108,13 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			ty := machinelearningv1alpha2.UNKNOWN_TYPE
 			p.Graph.Type = &ty
 		}
+		// Add version label for predictor if not present
+		if p.Labels == nil {
+			p.Labels = map[string]string{}
+		}
+		if _, present := p.Labels["version"]; !present {
+			p.Labels["version"] = p.Name
+		}
 		addDefaultsToGraph(p.Graph)
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
