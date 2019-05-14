@@ -127,7 +127,7 @@ type components struct {
 	deployments     []*appsv1.Deployment
 	services        []*corev1.Service
 	hpas            []*autoscaling.HorizontalPodAutoscaler
-	virtualService  *istio.VirtualService
+	virtualService  []*istio.VirtualService
 	destinationRule *istio.DestinationRule
 }
 
@@ -362,10 +362,11 @@ func createHpa(podSpec *machinelearningv1alpha2.SeldonPodSpec, deploymentName st
 func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	seldonId string,
 	namespace string,
-	engine_http_port int) (*istio.VirtualService, *istio.DestinationRule) {
-	vsvc := &istio.VirtualService{
+	engine_http_port int,
+	engine_grpc_port int) ([]*istio.VirtualService, *istio.DestinationRule) {
+	httpVsvc := &istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId,
+			Name:      seldonId+"-http",
 			Namespace: namespace,
 		},
 		Spec: istio.VirtualServiceSpec{
@@ -379,13 +380,28 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 						},
 					},
 					Rewrite: &istio.HTTPRewrite{URI: "/"},
-					Route: []istio.HTTPRouteDestination{
+				},
+			},
+		},
+	}
+
+
+	grpcVsvc := &istio.VirtualService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId+"-grpc",
+			Namespace: namespace,
+		},
+		Spec: istio.VirtualServiceSpec{
+			Hosts:    []string{"*"},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
+			HTTP: []istio.HTTPRoute{
+				{
+					Match: []istio.HTTPMatchRequest{
 						{
-							Destination: istio.Destination{
-								Host: seldonId,
-								Port: istio.PortSelector{
-									Number: uint32(engine_http_port),
-								},
+							URI: &v1alpha1.StringMatch{Prefix: "/seldon.protos.Seldon/"},
+							Headers: map[string]v1alpha1.StringMatch{
+								"seldon":v1alpha1.StringMatch{Exact:mlDep.Name},
+								"namespace":v1alpha1.StringMatch{Exact:namespace},
 							},
 						},
 					},
@@ -404,16 +420,27 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		},
 	}
 
-	routes := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
+	routesHttp := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
+	routesGrpc := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
 	subsets := make([]istio.Subset, len(mlDep.Spec.Predictors))
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
-		routes[i] = istio.HTTPRouteDestination{
+		routesHttp[i] = istio.HTTPRouteDestination{
 			Destination: istio.Destination{
 				Host:   seldonId,
 				Subset: p.Name,
 				Port: istio.PortSelector{
 					Number: uint32(engine_http_port),
+				},
+			},
+			Weight: int(p.Traffic),
+		}
+		routesGrpc[i] = istio.HTTPRouteDestination{
+			Destination: istio.Destination{
+				Host:   seldonId,
+				Subset: p.Name,
+				Port: istio.PortSelector{
+					Number: uint32(engine_grpc_port),
 				},
 			},
 			Weight: int(p.Traffic),
@@ -425,9 +452,14 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 			},
 		}
 	}
-	vsvc.Spec.HTTP[0].Route = routes
+	httpVsvc.Spec.HTTP[0].Route = routesHttp
+	grpcVsvc.Spec.HTTP[0].Route = routesGrpc
 	drule.Spec.Subsets = subsets
-	return vsvc, drule
+	vscs := make([]*istio.VirtualService,2)
+	vscs[0] = httpVsvc
+	vscs[1] = grpcVsvc
+
+	return vscs, drule
 }
 
 // Create all the components (Deployments, Services etc)
@@ -632,8 +664,8 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	}
 
 	if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
-		vsvc, dstRule := createIstioResources(mlDep, seldonId, namespace, engine_http_port)
-		c.virtualService = vsvc
+		vsvcs, dstRule := createIstioResources(mlDep, seldonId, namespace, engine_http_port, engine_grpc_port)
+		c.virtualService = vsvcs
 		c.destinationRule = dstRule
 	}
 
@@ -643,8 +675,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 // Create Services specified in components.
 func createIstioServices(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) (bool, error) {
 	ready := true
-	if components.virtualService != nil {
-		svc := components.virtualService
+	for _, svc := range components.virtualService {
 		if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
 			return ready, err
 		}
