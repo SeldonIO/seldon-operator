@@ -56,7 +56,7 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	}
 
 	c := AmbassadorConfig{
-		ApiVersion: "ambassador/v1",
+		ApiVersion: "ambassador/v0",
 		Kind:       "Mapping",
 		Name:       "seldon_" + mlDep.ObjectMeta.Name + "_rest_mapping",
 		Prefix:     "/seldon/" + serviceNameExternal + "/",
@@ -128,7 +128,7 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	}
 
 	c := AmbassadorConfig{
-		ApiVersion: "ambassador/v1",
+		ApiVersion: "ambassador/v0",
 		Kind:       "Mapping",
 		Name:       "seldon_" + mlDep.ObjectMeta.Name + "_grpc_mapping",
 		Grpc:       &grpc,
