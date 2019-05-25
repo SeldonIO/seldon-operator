@@ -50,7 +50,6 @@ import (
 const (
 	ENV_DEFAULT_ENGINE_SERVER_PORT      = "ENGINE_SERVER_PORT"
 	ENV_DEFAULT_ENGINE_SERVER_GRPC_PORT = "ENGINE_SERVER_GRPC_PORT"
-	ENV_ISTIO_ENABLED                   = "ISTIO_ENABLED"
 
 	DEFAULT_ENGINE_CONTAINER_PORT = 8000
 	DEFAULT_ENGINE_GRPC_PORT      = 5001
@@ -364,14 +363,16 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	namespace string,
 	engine_http_port int,
 	engine_grpc_port int) ([]*istio.VirtualService, *istio.DestinationRule) {
+
+	istio_gateway := getEnv(ENV_ISTIO_GATEWAY, "seldon-gateway")
 	httpVsvc := &istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId+"-http",
+			Name:      seldonId + "-http",
 			Namespace: namespace,
 		},
 		Spec: istio.VirtualServiceSpec{
 			Hosts:    []string{"*"},
-			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, istio_gateway)},
 			HTTP: []istio.HTTPRoute{
 				{
 					Match: []istio.HTTPMatchRequest{
@@ -385,10 +386,9 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		},
 	}
 
-
 	grpcVsvc := &istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId+"-grpc",
+			Name:      seldonId + "-grpc",
 			Namespace: namespace,
 		},
 		Spec: istio.VirtualServiceSpec{
@@ -400,8 +400,8 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 						{
 							URI: &v1alpha1.StringMatch{Prefix: "/seldon.protos.Seldon/"},
 							Headers: map[string]v1alpha1.StringMatch{
-								"seldon":v1alpha1.StringMatch{Exact:mlDep.Name},
-								"namespace":v1alpha1.StringMatch{Exact:namespace},
+								"seldon":    v1alpha1.StringMatch{Exact: mlDep.Name},
+								"namespace": v1alpha1.StringMatch{Exact: namespace},
 							},
 						},
 					},
@@ -455,7 +455,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	httpVsvc.Spec.HTTP[0].Route = routesHttp
 	grpcVsvc.Spec.HTTP[0].Route = routesGrpc
 	drule.Spec.Subsets = subsets
-	vscs := make([]*istio.VirtualService,2)
+	vscs := make([]*istio.VirtualService, 2)
 	vscs[0] = httpVsvc
 	vscs[1] = grpcVsvc
 
@@ -695,6 +695,7 @@ func createIstioServices(r *ReconcileSeldonDeployment, components *components, i
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(svc.Spec, found.Spec) {
 				ready = false
+				found.Spec = svc.Spec
 				log.Info("Updating Virtual Service", "namespace", svc.Namespace, "name", svc.Name)
 				err = r.Update(context.TODO(), found)
 				if err != nil {
@@ -707,13 +708,15 @@ func createIstioServices(r *ReconcileSeldonDeployment, components *components, i
 					instance.Status.ServiceStatus = map[string]machinelearningv1alpha2.ServiceStatus{}
 				}
 
-				if _, ok := instance.Status.ServiceStatus[found.Name]; !ok {
-					instance.Status.ServiceStatus[found.Name] = *components.serviceDetails[found.Name]
-					err = r.Status().Update(context.Background(), instance)
-					if err != nil {
-						return ready, err
+				/*
+					if _, ok := instance.Status.ServiceStatus[found.Name]; !ok {
+						instance.Status.ServiceStatus[found.Name] = *components.serviceDetails[found.Spec.HTTP[0].Route[0].Destination.Host]
+						err = r.Status().Update(context.Background(), instance)
+						if err != nil {
+							return ready, err
+						}
 					}
-				}
+				*/
 			}
 		}
 
@@ -740,6 +743,7 @@ func createIstioServices(r *ReconcileSeldonDeployment, components *components, i
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(drule.Spec, found.Spec) {
 				ready = false
+				found.Spec = drule.Spec
 				log.Info("Updating Istio Destination Rule", "namespace", drule.Namespace, "name", drule.Name)
 				err = r.Update(context.TODO(), found)
 				if err != nil {
@@ -791,6 +795,7 @@ func createServices(r *ReconcileSeldonDeployment, components *components, instan
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(svc.Spec, found.Spec) {
 				ready = false
+				found.Spec = svc.Spec
 				log.Info("Updating Service", "namespace", svc.Namespace, "name", svc.Name)
 				err = r.Update(context.TODO(), found)
 				if err != nil {
@@ -840,6 +845,7 @@ func createHpas(r *ReconcileSeldonDeployment, components *components, instance *
 		} else {
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(hpa.Spec, found.Spec) {
+				found.Spec = hpa.Spec
 				ready = false
 				log.Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
 				err = r.Update(context.TODO(), found)

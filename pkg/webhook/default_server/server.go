@@ -52,9 +52,18 @@ func Add(mgr manager.Manager) error {
 	if dev {
 		svr, err = webhook.NewServer("foo-admission-server", mgr, webhook.ServerOptions{
 			// TODO(user): change the configuration of ServerOptions based on your need.
-			Port:             9876,
-			CertDir:          "/tmp/cert",
-			BootstrapOptions: &webhook.BootstrapOptions{},
+			Port:    9876,
+			CertDir: "/tmp/cert",
+			BootstrapOptions: &webhook.BootstrapOptions{
+				Service: &webhook.Service{
+					Namespace: ns,
+					Name:      "webhook-server-service",
+					// Selectors should select the pods that runs this webhook server.
+					Selectors: map[string]string{
+						"control-plane": "controller-manager",
+					},
+				},
+			},
 		})
 		if err != nil {
 			return err
