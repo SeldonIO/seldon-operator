@@ -72,7 +72,12 @@ func createPredictorHash(p *PredictorSpec) string {
 }
 
 func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
-	return mlDep.Spec.Name + "-" + mlDep.ObjectMeta.Name
+	name := mlDep.Spec.Name + "-" + mlDep.ObjectMeta.Name
+	if len(name) > 63 {
+		return "seldon-" + hash(name)
+	} else {
+		return name
+	}
 }
 
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
