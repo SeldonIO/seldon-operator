@@ -1,6 +1,13 @@
 # Seldon Core Go Controller
 A Go controller for the Seldon Core CRD
 
+## Developer Notes
+
+Clone into GOPATH.
+
+Kubebuilder is required to build the project.
+
+Run with `make`
 
 ### Historical Notes
 This project was created with kubebuilder using the following commands.
