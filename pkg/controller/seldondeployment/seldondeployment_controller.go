@@ -183,7 +183,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	//Engine resources
 	engineResources := p.SvcOrchSpec.Resources
 	if engineResources == nil {
-		cpuQuantity, _ := resource.ParseQuantity("1")
+		cpuQuantity, _ := resource.ParseQuantity("0.1")
 		engineResources = &corev1.ResourceRequirements{
 			Requests: map[corev1.ResourceName]resource.Quantity{
 				corev1.ResourceCPU: cpuQuantity,
