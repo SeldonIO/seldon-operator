@@ -161,7 +161,7 @@ func getAnnotation(mlDep *machinelearningv1alpha2.SeldonDeployment, annotationKe
 // Create the Container for the service orchestrator.
 func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port, engine_grpc_port int) (*corev1.Container, error) {
 	// Get engine user
-	var engineUser int64 = 8888
+	var engineUser int64 = -1
 	if engineUserEnv, ok := os.LookupEnv("ENGINE_CONTAINER_USER"); ok {
 		user, err := strconv.Atoi(engineUserEnv)
 		if err != nil {
@@ -216,7 +216,6 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			{ContainerPort: 8082, Name: "admin", Protocol: corev1.ProtocolTCP},
 			{ContainerPort: 9090, Name: "jmx", Protocol: corev1.ProtocolTCP},
 		},
-		SecurityContext: &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount},
 		ReadinessProbe: &corev1.Probe{Handler: corev1.Handler{HTTPGet: &corev1.HTTPGetAction{Port: intstr.FromString("admin"), Path: "/ready", Scheme: corev1.URISchemeHTTP}},
 			InitialDelaySeconds: 20,
 			PeriodSeconds:       1,
@@ -236,7 +235,9 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		},
 		Resources: *engineResources,
 	}
-
+	if engineUser != -1 {
+		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}
+	}
 	// Environment vars if specified
 	if p.SvcOrchSpec.Env != nil {
 		for _, env := range p.SvcOrchSpec.Env {
