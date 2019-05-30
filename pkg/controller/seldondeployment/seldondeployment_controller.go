@@ -170,7 +170,6 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			engineUser = int64(user)
 		}
 	}
-	var procMount = corev1.DefaultProcMount
 	// get predictor as base64 encoded json
 	predictorB64, err := getEngineVarJson(p)
 	if err != nil {
@@ -236,7 +235,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		Resources: *engineResources,
 	}
 	if engineUser != -1 {
-		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}
+		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser}
 	}
 	// Environment vars if specified
 	if p.SvcOrchSpec.Env != nil {
