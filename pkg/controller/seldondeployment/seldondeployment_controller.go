@@ -249,7 +249,8 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		Resources: *engineResources,
 	}
 	if engineUser != -1 {
-		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser}
+		var procMount = corev1.DefaultProcMount
+		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}
 	}
 	// Environment vars if specified
 	if p.SvcOrchSpec.Env != nil {
@@ -897,6 +898,13 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		} else if err != nil {
 			return ready, err
 		} else {
+			//Hack to add default procMount which if not present in old k8s versions might cause us to believe the Specs are different and we need an update
+			for _,c := range found.Spec.Template.Spec.Containers {
+				if c.SecurityContext != nil && c.SecurityContext.ProcMount != nil {
+					var procMount = corev1.DefaultProcMount
+					c.SecurityContext.ProcMount = &procMount
+				}
+			}
 			// Update the found object and write the result back if there are any changes
 			jEquals, err := jsonEquals(deploy.Spec.Template.Spec, found.Spec.Template.Spec)
 			if err != nil {
