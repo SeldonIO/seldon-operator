@@ -22,6 +22,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/knative/pkg/apis/istio/common/v1alpha1"
+	istio "github.com/knative/pkg/apis/istio/v1alpha3"
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -98,6 +100,16 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
+	if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
+		err = c.Watch(&source.Kind{Type: &istio.VirtualService{}}, &handler.EnqueueRequestForOwner{
+			IsController: true,
+			OwnerType:    &machinelearningv1alpha2.SeldonDeployment{},
+		})
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -110,10 +122,12 @@ type ReconcileSeldonDeployment struct {
 }
 
 type components struct {
-	serviceDetails map[string]*machinelearningv1alpha2.ServiceStatus
-	deployments    []*appsv1.Deployment
-	services       []*corev1.Service
-	hpas           []*autoscaling.HorizontalPodAutoscaler
+	serviceDetails  map[string]*machinelearningv1alpha2.ServiceStatus
+	deployments     []*appsv1.Deployment
+	services        []*corev1.Service
+	hpas            []*autoscaling.HorizontalPodAutoscaler
+	virtualService  []*istio.VirtualService
+	destinationRule *istio.DestinationRule
 }
 
 type serviceDetails struct {
@@ -235,7 +249,8 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		Resources: *engineResources,
 	}
 	if engineUser != -1 {
-		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser}
+		var procMount = corev1.DefaultProcMount
+		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}
 	}
 	// Environment vars if specified
 	if p.SvcOrchSpec.Env != nil {
@@ -340,6 +355,112 @@ func createHpa(podSpec *machinelearningv1alpha2.SeldonPodSpec, deploymentName st
 	}
 
 	return &hpa
+}
+
+// Create istio virtual service and destination rule.
+// Creates routes for each predictor with traffic weight split
+func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
+	seldonId string,
+	namespace string,
+	engine_http_port int,
+	engine_grpc_port int) ([]*istio.VirtualService, *istio.DestinationRule) {
+
+	istio_gateway := getEnv(ENV_ISTIO_GATEWAY, "seldon-gateway")
+	httpVsvc := &istio.VirtualService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId + "-http",
+			Namespace: namespace,
+		},
+		Spec: istio.VirtualServiceSpec{
+			Hosts:    []string{"*"},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, istio_gateway)},
+			HTTP: []istio.HTTPRoute{
+				{
+					Match: []istio.HTTPMatchRequest{
+						{
+							URI: &v1alpha1.StringMatch{Prefix: "/seldon/" + namespace + "/" + mlDep.Name + "/"},
+						},
+					},
+					Rewrite: &istio.HTTPRewrite{URI: "/"},
+				},
+			},
+		},
+	}
+
+	grpcVsvc := &istio.VirtualService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId + "-grpc",
+			Namespace: namespace,
+		},
+		Spec: istio.VirtualServiceSpec{
+			Hosts:    []string{"*"},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
+			HTTP: []istio.HTTPRoute{
+				{
+					Match: []istio.HTTPMatchRequest{
+						{
+							URI: &v1alpha1.StringMatch{Prefix: "/seldon.protos.Seldon/"},
+							Headers: map[string]v1alpha1.StringMatch{
+								"seldon":    v1alpha1.StringMatch{Exact: mlDep.Name},
+								"namespace": v1alpha1.StringMatch{Exact: namespace},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	drule := &istio.DestinationRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId,
+			Namespace: namespace,
+		},
+		Spec: istio.DestinationRuleSpec{
+			Host: seldonId,
+		},
+	}
+
+	routesHttp := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
+	routesGrpc := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
+	subsets := make([]istio.Subset, len(mlDep.Spec.Predictors))
+	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
+		p := mlDep.Spec.Predictors[i]
+		routesHttp[i] = istio.HTTPRouteDestination{
+			Destination: istio.Destination{
+				Host:   seldonId,
+				Subset: p.Name,
+				Port: istio.PortSelector{
+					Number: uint32(engine_http_port),
+				},
+			},
+			Weight: int(p.Traffic),
+		}
+		routesGrpc[i] = istio.HTTPRouteDestination{
+			Destination: istio.Destination{
+				Host:   seldonId,
+				Subset: p.Name,
+				Port: istio.PortSelector{
+					Number: uint32(engine_grpc_port),
+				},
+			},
+			Weight: int(p.Traffic),
+		}
+		subsets[i] = istio.Subset{
+			Name: p.Name,
+			Labels: map[string]string{
+				"version": p.Labels["version"],
+			},
+		}
+	}
+	httpVsvc.Spec.HTTP[0].Route = routesHttp
+	grpcVsvc.Spec.HTTP[0].Route = routesGrpc
+	drule.Spec.Subsets = subsets
+	vscs := make([]*istio.VirtualService, 2)
+	vscs[0] = httpVsvc
+	vscs[1] = grpcVsvc
+
+	return vscs, drule
 }
 
 // Create all the components (Deployments, Services etc)
@@ -543,7 +664,112 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 		GrpcEndpoint: seldonId + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 	}
 
+	if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
+		vsvcs, dstRule := createIstioResources(mlDep, seldonId, namespace, engine_http_port, engine_grpc_port)
+		c.virtualService = vsvcs
+		c.destinationRule = dstRule
+	}
+
 	return &c, nil
+}
+
+// Create Services specified in components.
+func createIstioServices(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) (bool, error) {
+	ready := true
+	for _, svc := range components.virtualService {
+		if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
+			return ready, err
+		}
+		found := &istio.VirtualService{}
+		err := r.Get(context.TODO(), types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			ready = false
+			log.Info("Creating Virtual Service", "namespace", svc.Namespace, "name", svc.Name)
+			err = r.Create(context.TODO(), svc)
+			if err != nil {
+				return ready, err
+			}
+
+		} else if err != nil {
+			return ready, err
+		} else {
+			// Update the found object and write the result back if there are any changes
+			if !reflect.DeepEqual(svc.Spec, found.Spec) {
+				ready = false
+				found.Spec = svc.Spec
+				log.Info("Updating Virtual Service", "namespace", svc.Namespace, "name", svc.Name)
+				err = r.Update(context.TODO(), found)
+				if err != nil {
+					return ready, err
+				}
+			} else {
+				log.Info("Found identical Virtual Service", "namespace", found.Namespace, "name", found.Name)
+
+				if instance.Status.ServiceStatus == nil {
+					instance.Status.ServiceStatus = map[string]machinelearningv1alpha2.ServiceStatus{}
+				}
+
+				/*
+					if _, ok := instance.Status.ServiceStatus[found.Name]; !ok {
+						instance.Status.ServiceStatus[found.Name] = *components.serviceDetails[found.Spec.HTTP[0].Route[0].Destination.Host]
+						err = r.Status().Update(context.Background(), instance)
+						if err != nil {
+							return ready, err
+						}
+					}
+				*/
+			}
+		}
+
+	}
+
+	if components.destinationRule != nil {
+		drule := components.destinationRule
+		if err := controllerutil.SetControllerReference(instance, drule, r.scheme); err != nil {
+			return ready, err
+		}
+		found := &istio.DestinationRule{}
+		err := r.Get(context.TODO(), types.NamespacedName{Name: drule.Name, Namespace: drule.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			ready = false
+			log.Info("Creating Istio Destination Rule", "namespace", drule.Namespace, "name", drule.Name)
+			err = r.Create(context.TODO(), drule)
+			if err != nil {
+				return ready, err
+			}
+
+		} else if err != nil {
+			return ready, err
+		} else {
+			// Update the found object and write the result back if there are any changes
+			if !reflect.DeepEqual(drule.Spec, found.Spec) {
+				ready = false
+				found.Spec = drule.Spec
+				log.Info("Updating Istio Destination Rule", "namespace", drule.Namespace, "name", drule.Name)
+				err = r.Update(context.TODO(), found)
+				if err != nil {
+					return ready, err
+				}
+			} else {
+				log.Info("Found identical Istio Destination Rule", "namespace", found.Namespace, "name", found.Name)
+
+				if instance.Status.ServiceStatus == nil {
+					instance.Status.ServiceStatus = map[string]machinelearningv1alpha2.ServiceStatus{}
+				}
+
+				if _, ok := instance.Status.ServiceStatus[found.Name]; !ok {
+					instance.Status.ServiceStatus[found.Name] = *components.serviceDetails[found.Name]
+					err = r.Status().Update(context.Background(), instance)
+					if err != nil {
+						return ready, err
+					}
+				}
+			}
+		}
+
+	}
+
+	return ready, nil
 }
 
 // Create Services specified in components.
@@ -570,6 +796,7 @@ func createServices(r *ReconcileSeldonDeployment, components *components, instan
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(svc.Spec, found.Spec) {
 				ready = false
+				found.Spec = svc.Spec
 				log.Info("Updating Service", "namespace", svc.Namespace, "name", svc.Name)
 				err = r.Update(context.TODO(), found)
 				if err != nil {
@@ -619,6 +846,7 @@ func createHpas(r *ReconcileSeldonDeployment, components *components, instance *
 		} else {
 			// Update the found object and write the result back if there are any changes
 			if !reflect.DeepEqual(hpa.Spec, found.Spec) {
+				found.Spec = hpa.Spec
 				ready = false
 				log.Info("Updating HPA", "namespace", hpa.Namespace, "name", hpa.Name)
 				err = r.Update(context.TODO(), found)
@@ -670,6 +898,13 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		} else if err != nil {
 			return ready, err
 		} else {
+			//Hack to add default procMount which if not present in old k8s versions might cause us to believe the Specs are different and we need an update
+			for _,c := range found.Spec.Template.Spec.Containers {
+				if c.SecurityContext != nil && c.SecurityContext.ProcMount != nil {
+					var procMount = corev1.DefaultProcMount
+					c.SecurityContext.ProcMount = &procMount
+				}
+			}
 			// Update the found object and write the result back if there are any changes
 			jEquals, err := jsonEquals(deploy.Spec.Template.Spec, found.Spec.Template.Spec)
 			if err != nil {
@@ -823,6 +1058,10 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=v1,resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=v1,resources=services/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=machinelearning.seldon.io,resources=seldondeployments,verbs=get;list;watch;create;update;patch;delete
@@ -856,12 +1095,17 @@ func (r *ReconcileSeldonDeployment) Reconcile(request reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 
+	virtualServicesReady, err := createIstioServices(r, components, instance)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
 	hpasReady, err := createHpas(r, components, instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	if deploymentsReady && servicesReady && hpasReady {
+	if deploymentsReady && servicesReady && hpasReady && virtualServicesReady {
 		instance.Status.State = "Available"
 	} else {
 		instance.Status.State = "Creating"

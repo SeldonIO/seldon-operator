@@ -20,6 +20,7 @@ import (
 	"flag"
 	"os"
 
+	istio "github.com/knative/pkg/apis/istio/v1alpha3"
 	"github.com/seldonio/seldon-operator/pkg/apis"
 	"github.com/seldonio/seldon-operator/pkg/controller"
 	"github.com/seldonio/seldon-operator/pkg/webhook"
@@ -59,6 +60,13 @@ func main() {
 	log.Info("setting up scheme")
 	if err := apis.AddToScheme(mgr.GetScheme()); err != nil {
 		log.Error(err, "unable add APIs to scheme")
+		os.Exit(1)
+	}
+
+	// Setup Scheme for all resources
+	log.Info("setting up istio scheme")
+	if err := istio.AddToScheme(mgr.GetScheme()); err != nil {
+		log.Error(err, "unable add istio APIs to scheme")
 		os.Exit(1)
 	}
 
