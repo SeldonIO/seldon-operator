@@ -20,6 +20,7 @@ const (
 	YAML_SEP = "---\n"
 )
 
+
 // Struct for Ambassador configuration
 type AmbassadorConfig struct {
 	ApiVersion   string            `yaml:"apiVersion"`
@@ -34,6 +35,12 @@ type AmbassadorConfig struct {
 	RegexHeaders map[string]string `yaml:"regex_headers,omitempty"`
 	Weight       int               `yaml:"weight,omitempty"`
 	Shadow       *bool             `yaml:"shadow,omitempty"`
+	RetryPolicy  *AmbassadorRetryPolicy `yaml:"retry_policy,omitempty"`
+}
+
+type AmbassadorRetryPolicy struct {
+	RetryOn  string `yaml:"retry_on,omitempty"`
+	NumRetries int `yaml:"num_retries,omitempty"`
 }
 
 // Return a REST configuration for Ambassador with optional custom settings.
@@ -56,7 +63,7 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	}
 
 	c := AmbassadorConfig{
-		ApiVersion: "ambassador/v0",
+		ApiVersion: "ambassador/v1",
 		Kind:       "Mapping",
 		Name:       "seldon_" + mlDep.ObjectMeta.Name + "_rest_mapping",
 		Prefix:     "/seldon/" + serviceNameExternal + "/",
@@ -128,7 +135,7 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	}
 
 	c := AmbassadorConfig{
-		ApiVersion: "ambassador/v0",
+		ApiVersion: "ambassador/v1",
 		Kind:       "Mapping",
 		Name:       "seldon_" + mlDep.ObjectMeta.Name + "_grpc_mapping",
 		Grpc:       &grpc,
@@ -137,6 +144,10 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Headers:    map[string]string{"seldon": serviceNameExternal},
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		TimeoutMs:  timeout,
+		RetryPolicy: &AmbassadorRetryPolicy{
+			RetryOn: "connect-failure",
+			NumRetries: 3,
+		},
 	}
 
 	if weight != "" {
@@ -173,6 +184,7 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		shadow := true
 		c.Shadow = &shadow
 	}
+
 	v, err := yaml.Marshal(c)
 	if err != nil {
 		return "", err
