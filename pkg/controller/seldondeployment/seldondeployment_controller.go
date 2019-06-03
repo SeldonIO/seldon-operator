@@ -899,7 +899,7 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 			return ready, err
 		} else {
 			//Hack to add default procMount which if not present in old k8s versions might cause us to believe the Specs are different and we need an update
-			for _,c := range found.Spec.Template.Spec.Containers {
+			for _, c := range found.Spec.Template.Spec.Containers {
 				if c.SecurityContext != nil && c.SecurityContext.ProcMount != nil {
 					var procMount = corev1.DefaultProcMount
 					c.SecurityContext.ProcMount = &procMount
