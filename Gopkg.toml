@@ -19,10 +19,6 @@ required = [
 [prune]
   go-tests = true
 
- [[constraint]]
-   name = "github.com/knative/serving"
-   revision = "a44e3578ce27cc1455b3e1c7f74b09b82dda57f5"
-
 [[override]]
   name = "github.com/knative/pkg"
   # HEAD as of 2019-04-19

@@ -20,27 +20,26 @@ const (
 	YAML_SEP = "---\n"
 )
 
-
 // Struct for Ambassador configuration
 type AmbassadorConfig struct {
-	ApiVersion   string            `yaml:"apiVersion"`
-	Kind         string            `yaml:"kind"`
-	Name         string            `yaml:"name"`
-	Grpc         *bool             `yaml:"grpc,omitempty"`
-	Prefix       string            `yaml:"prefix"`
-	Rewrite      string            `yaml:"rewrite,omitempty"`
-	Service      string            `yaml:"service"`
-	TimeoutMs    int               `yaml:"timeout_ms"`
-	Headers      map[string]string `yaml:"headers,omitempty"`
-	RegexHeaders map[string]string `yaml:"regex_headers,omitempty"`
-	Weight       int               `yaml:"weight,omitempty"`
-	Shadow       *bool             `yaml:"shadow,omitempty"`
+	ApiVersion   string                 `yaml:"apiVersion"`
+	Kind         string                 `yaml:"kind"`
+	Name         string                 `yaml:"name"`
+	Grpc         *bool                  `yaml:"grpc,omitempty"`
+	Prefix       string                 `yaml:"prefix"`
+	Rewrite      string                 `yaml:"rewrite,omitempty"`
+	Service      string                 `yaml:"service"`
+	TimeoutMs    int                    `yaml:"timeout_ms"`
+	Headers      map[string]string      `yaml:"headers,omitempty"`
+	RegexHeaders map[string]string      `yaml:"regex_headers,omitempty"`
+	Weight       int                    `yaml:"weight,omitempty"`
+	Shadow       *bool                  `yaml:"shadow,omitempty"`
 	RetryPolicy  *AmbassadorRetryPolicy `yaml:"retry_policy,omitempty"`
 }
 
 type AmbassadorRetryPolicy struct {
-	RetryOn  string `yaml:"retry_on,omitempty"`
-	NumRetries int `yaml:"num_retries,omitempty"`
+	RetryOn    string `yaml:"retry_on,omitempty"`
+	NumRetries int    `yaml:"num_retries,omitempty"`
 }
 
 // Return a REST configuration for Ambassador with optional custom settings.
@@ -145,7 +144,7 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		TimeoutMs:  timeout,
 		RetryPolicy: &AmbassadorRetryPolicy{
-			RetryOn: "connect-failure",
+			RetryOn:    "connect-failure",
 			NumRetries: 3,
 		},
 	}
