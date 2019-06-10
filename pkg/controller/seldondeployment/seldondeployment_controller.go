@@ -568,11 +568,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 
-				// add predictor labels
-				for k, v := range p.Labels {
-					deploy.ObjectMeta.Labels[k] = v
-					deploy.Spec.Template.ObjectMeta.Labels[k] = v
-				}
+			}
+
+			// add predictor labels
+			for k, v := range p.Labels {
+				deploy.ObjectMeta.Labels[k] = v
+				deploy.Spec.Template.ObjectMeta.Labels[k] = v
 			}
 
 			// create services for each container
