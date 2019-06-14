@@ -6,7 +6,7 @@ A Go controller for the Seldon Core CRD
 Clone into GOPATH.
 
 Kubebuilder is required to build the project.
-
+Run `export GO111MODULE=off`
 Run with `make`
 
 ### Historical Notes

@@ -278,7 +278,7 @@ func createEngineDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        depName,
 			Namespace:   getNamespace(mlDep),
-			Labels:      map[string]string{machinelearningv1alpha2.Label_svc_orch: "true", machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1"},
+			Labels:      map[string]string{machinelearningv1alpha2.Label_svc_orch: "true", machinelearningv1alpha2.Label_seldon_app: seldonId, machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "version": "v1", "fluentd": "true"},
 			Annotations: mlDep.Spec.Annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -511,7 +511,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      depName,
 					Namespace: namespace,
-					Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
+					Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
 				},
 				Spec: appsv1.DeploymentSpec{
 					Selector: &metav1.LabelSelector{
@@ -519,7 +519,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 					},
 					Template: corev1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
-							Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName},
+							Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
 							Annotations: mlDep.Spec.Annotations,
 						},
 						Spec: cSpec.Spec,
@@ -568,11 +568,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
 
-				// add predictor labels
-				for k, v := range p.Labels {
-					deploy.ObjectMeta.Labels[k] = v
-					deploy.Spec.Template.ObjectMeta.Labels[k] = v
-				}
+			}
+
+			// add predictor labels
+			for k, v := range p.Labels {
+				deploy.ObjectMeta.Labels[k] = v
+				deploy.Spec.Template.ObjectMeta.Labels[k] = v
 			}
 
 			// create services for each container
