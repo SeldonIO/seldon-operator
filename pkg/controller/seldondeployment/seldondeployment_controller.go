@@ -275,20 +275,31 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		Resources: *engineResources,
 	}
 
-	engineEnvVarsFromAnnotations := getEngineEnvAnnotations(mlDep)
-	for _, envVar := range engineEnvVarsFromAnnotations {
-		c.Env = append(c.Env, envVar)
-	}
 
 	if engineUser != -1 {
 		var procMount = corev1.DefaultProcMount
 		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}
 	}
+
+
 	// Environment vars if specified
+	svcOrchEnvMap := make(map[string]string)
 	if p.SvcOrchSpec.Env != nil {
 		for _, env := range p.SvcOrchSpec.Env {
 			c.Env = append(c.Env, *env)
+			svcOrchEnvMap[env.Name] = env.Value
 		}
+	}
+
+	engineEnvVarsFromAnnotations := getEngineEnvAnnotations(mlDep)
+	for _, envVar := range engineEnvVarsFromAnnotations {
+		//don't add env vars that are already present in svcOrchSpec
+		if _, ok := svcOrchEnvMap[envVar.Name]; ok {
+    	//present so don't try to overwrite
+		} else{
+			c.Env = append(c.Env, envVar)
+		}
+
 	}
 
 	return &c, nil
