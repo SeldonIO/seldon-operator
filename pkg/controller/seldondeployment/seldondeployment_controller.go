@@ -44,7 +44,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sort"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -172,6 +174,29 @@ func getAnnotation(mlDep *machinelearningv1alpha2.SeldonDeployment, annotationKe
 	}
 }
 
+//get annotations that start with seldon.io/engine
+func getEngineEnvAnnotations(mlDep *machinelearningv1alpha2.SeldonDeployment) []corev1.EnvVar {
+
+	envVars := make([]corev1.EnvVar, 0)
+	var keys []string
+	for k, _ := range mlDep.Spec.Annotations {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		//prefix indicates engine annotation but "seldon.io/engine-separate-pod" isn't an env one
+		if strings.HasPrefix(k, "seldon.io/engine-") && k != machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE {
+			name := strings.TrimPrefix(k, "seldon.io/engine-")
+			var replacer = strings.NewReplacer("-", "_")
+			name = replacer.Replace(name)
+			name = strings.ToUpper(name)
+			envVars = append(envVars, corev1.EnvVar{Name: name, Value: mlDep.Spec.Annotations[k]})
+		}
+	}
+	return envVars
+}
+
 // Create the Container for the service orchestrator.
 func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port, engine_grpc_port int) (*corev1.Container, error) {
 	// Get engine user
@@ -249,6 +274,12 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		},
 		Resources: *engineResources,
 	}
+
+	engineEnvVarsFromAnnotations := getEngineEnvAnnotations(mlDep)
+	for _, envVar := range engineEnvVarsFromAnnotations {
+		c.Env = append(c.Env, envVar)
+	}
+
 	if engineUser != -1 {
 		var procMount = corev1.DefaultProcMount
 		c.SecurityContext = &corev1.SecurityContext{RunAsUser: &engineUser, ProcMount: &procMount}

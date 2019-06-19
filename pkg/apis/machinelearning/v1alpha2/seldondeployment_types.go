@@ -40,7 +40,7 @@ const (
 	ENV_PREDICTOR_ID                 = "PREDICTOR_ID"
 	ENV_SELDON_DEPLOYMENT_ID         = "SELDON_DEPLOYMENT_ID"
 
-	ANNOTATION_JAVA_OPTS       = "seldonio/engine-java-opts"
+	ANNOTATION_JAVA_OPTS       = "seldon.io/engine-java-opts"
 	ANNOTATION_SEPARATE_ENGINE = "seldon.io/engine-separate-pod"
 	ANNOTATION_HEADLESS_SVC    = "seldon.io/headless-svc"
 )
