@@ -663,9 +663,10 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				deploy.Spec.Selector.MatchLabels[containerServiceKey] = containerServiceValue
 				deploy.Spec.Template.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
 
-				c.deployments = append(c.deployments, deploy)
 				c.services = append(c.services, svc)
 			}
+			// Add deployment
+			c.deployments = append(c.deployments, deploy)
 		}
 	}
 
