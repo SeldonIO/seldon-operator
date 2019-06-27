@@ -27,18 +27,18 @@ metadata:
   name: controller-manager
   namespace: system
   labels:
-    control-plane: controller-manager
+    control-plane: seldon-controller-manager
     controller-tools.k8s.io: "1.0"
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      control-plane: seldon-controller-manager
       controller-tools.k8s.io: "1.0"
   serviceName: controller-manager-service
   template:
     metadata:
       labels:
-        control-plane: controller-manager
+        control-plane: seldon-controller-manager
         controller-tools.k8s.io: "1.0"
     spec:
       containers:
