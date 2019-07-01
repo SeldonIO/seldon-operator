@@ -102,6 +102,15 @@ func GetServiceOrchestratorName(mlDep *SeldonDeployment, p *PredictorSpec) strin
 	}
 }
 
+func GetPredictorKey(mlDep *SeldonDeployment, p *PredictorSpec) string {
+	pName := mlDep.Spec.Name + "-" + p.Name
+	if len(pName) > 63 {
+		return "seldon-" + hash(pName)
+	} else {
+		return pName
+	}
+}
+
 func GetPredictorServiceNameKey(c *v1.Container) string {
 	return Label_seldon_app + "-" + c.Name
 }

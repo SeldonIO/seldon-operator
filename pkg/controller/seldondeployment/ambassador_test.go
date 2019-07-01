@@ -11,7 +11,8 @@ import (
 
 func TestAmbassadorBasic(t *testing.T) {
 	mlDep := machinelearningv1alpha2.SeldonDeployment{ObjectMeta: metav1.ObjectMeta{Name: "mymodel"}}
-	s, err := getAmbassadorConfigs(&mlDep, "myservice", 9000, 5000)
+	p := machinelearningv1alpha2.PredictorSpec{Name: "p"}
+	s, err := getAmbassadorConfigs(&mlDep, &p, "myservice", 9000, 5000)
 	if err != nil {
 		t.Fatalf("Config format error")
 	}
