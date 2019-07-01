@@ -11,7 +11,6 @@ const (
 	ANNOTATION_REST_READ_TIMEOUT       = "seldon.io/rest-read-timeout"
 	ANNOTATION_GRPC_READ_TIMEOUT       = "seldon.io/grpc-read-timeout"
 	ANNOTATION_AMBASSADOR_CUSTOM       = "seldon.io/ambassador-config"
-	ANNOTATION_AMBASSADOR_WEIGHT       = "seldon.io/ambassador-weight"
 	ANNOTATION_AMBASSADOR_SHADOW       = "seldon.io/ambassador-shadow"
 	ANNOTATION_AMBASSADOR_SERVICE      = "seldon.io/ambassador-service-name"
 	ANNOTATION_AMBASSADOR_HEADER       = "seldon.io/ambassador-header"
