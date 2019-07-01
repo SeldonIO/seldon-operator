@@ -124,12 +124,12 @@ type ReconcileSeldonDeployment struct {
 }
 
 type components struct {
-	serviceDetails  map[string]*machinelearningv1alpha2.ServiceStatus
-	deployments     []*appsv1.Deployment
-	services        []*corev1.Service
-	hpas            []*autoscaling.HorizontalPodAutoscaler
-	virtualService  []*istio.VirtualService
-	destinationRule *istio.DestinationRule
+	serviceDetails   map[string]*machinelearningv1alpha2.ServiceStatus
+	deployments      []*appsv1.Deployment
+	services         []*corev1.Service
+	hpas             []*autoscaling.HorizontalPodAutoscaler
+	virtualServices  []*istio.VirtualService
+	destinationRules []*istio.DestinationRule
 }
 
 type serviceDetails struct {
@@ -210,7 +210,13 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		}
 	}
 	// get predictor as base64 encoded json
-	predictorB64, err := getEngineVarJson(p)
+	pCopy := p.DeepCopy()
+	// Set traffic to zero to ensure this doesn't cause a diff in the resulting  deployment created
+	pCopy.Traffic = 0
+	jStr1, err := json.Marshal(pCopy)
+	fmt.Println("Predictor to be base64 encoded------>")
+	fmt.Println(string(jStr1))
+	predictorB64, err := getEngineVarJson(pCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +410,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	seldonId string,
 	namespace string,
 	engine_http_port int,
-	engine_grpc_port int) ([]*istio.VirtualService, *istio.DestinationRule) {
+	engine_grpc_port int) ([]*istio.VirtualService, []*istio.DestinationRule) {
 
 	istio_gateway := getEnv(ENV_ISTIO_GATEWAY, "seldon-gateway")
 	httpVsvc := &istio.VirtualService{
@@ -452,24 +458,34 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		},
 	}
 
-	drule := &istio.DestinationRule{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId,
-			Namespace: namespace,
-		},
-		Spec: istio.DestinationRuleSpec{
-			Host: seldonId,
-		},
-	}
-
 	routesHttp := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
 	routesGrpc := make([]istio.HTTPRouteDestination, len(mlDep.Spec.Predictors))
-	subsets := make([]istio.Subset, len(mlDep.Spec.Predictors))
+	drules := make([]*istio.DestinationRule, len(mlDep.Spec.Predictors))
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
+		pSvcName := machinelearningv1alpha2.GetPredictorKey(mlDep, &p)
+
+		drule := &istio.DestinationRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pSvcName,
+				Namespace: namespace,
+			},
+			Spec: istio.DestinationRuleSpec{
+				Host: pSvcName,
+				Subsets: []istio.Subset {
+					{
+						Name: p.Name,
+						Labels: map[string]string{
+							"version": p.Labels["version"],
+						},
+					},
+				},
+			},
+		}
+
 		routesHttp[i] = istio.HTTPRouteDestination{
 			Destination: istio.Destination{
-				Host:   seldonId,
+				Host:   pSvcName,
 				Subset: p.Name,
 				Port: istio.PortSelector{
 					Number: uint32(engine_http_port),
@@ -479,7 +495,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		}
 		routesGrpc[i] = istio.HTTPRouteDestination{
 			Destination: istio.Destination{
-				Host:   seldonId,
+				Host:   pSvcName,
 				Subset: p.Name,
 				Port: istio.PortSelector{
 					Number: uint32(engine_grpc_port),
@@ -487,21 +503,15 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 			},
 			Weight: int(p.Traffic),
 		}
-		subsets[i] = istio.Subset{
-			Name: p.Name,
-			Labels: map[string]string{
-				"version": p.Labels["version"],
-			},
-		}
+		drules[i] = drule
 	}
 	httpVsvc.Spec.HTTP[0].Route = routesHttp
 	grpcVsvc.Spec.HTTP[0].Route = routesGrpc
-	drule.Spec.Subsets = subsets
 	vscs := make([]*istio.VirtualService, 2)
 	vscs[0] = httpVsvc
 	vscs[1] = grpcVsvc
 
-	return vscs, drule
+	return vscs, drules
 }
 
 // Create all the components (Deployments, Services etc)
@@ -533,11 +543,12 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
-
+		pSvcName := machinelearningv1alpha2.GetPredictorKey(mlDep, &p)
+		log.Info("pSvcName","val", pSvcName)
 		// Add engine deployment if separate
 		_, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]
 		if hasSeparateEnginePod {
-			deploy, err := createEngineDeployment(mlDep, &p, seldonId, engine_http_port, engine_grpc_port)
+			deploy, err := createEngineDeployment(mlDep, &p, pSvcName, engine_http_port, engine_grpc_port)
 			if err != nil {
 				return nil, err
 			}
@@ -605,9 +616,9 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 				deploy.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(engine_http_port)
 				deploy.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
 
-				deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
-				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = seldonId
-				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = seldonId
+				deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
 
 			}
 
@@ -666,60 +677,65 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			// Add deployment
 			c.deployments = append(c.deployments, deploy)
 		}
-	}
 
-	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId,
-			Namespace: namespace,
-			Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId,
-				machinelearningv1alpha2.Label_seldon_id: seldonId},
-		},
-		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
-				{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
+		//Create Service for Predictor
+
+		psvc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      pSvcName,
+				Namespace: namespace,
+				Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName,
+					machinelearningv1alpha2.Label_seldon_id: seldonId},
 			},
-			Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: seldonId},
-			SessionAffinity: corev1.ServiceAffinityNone,
-			Type:            corev1.ServiceTypeClusterIP,
-		},
-	}
-
-	if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
-		svc.Annotations = make(map[string]string)
-		//Create top level Service
-		ambassadorConfig, err := getAmbassadorConfigs(mlDep, seldonId, engine_http_port, engine_grpc_port)
-		if err != nil {
-			return nil, err
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{
+					{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
+					{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
+				},
+				Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName},
+				SessionAffinity: corev1.ServiceAffinityNone,
+				Type:            corev1.ServiceTypeClusterIP,
+			},
 		}
-		svc.Annotations["getambassador.io/config"] = ambassadorConfig
+
+		if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
+			psvc.Annotations = make(map[string]string)
+			//Create top level Service
+			ambassadorConfig, err := getAmbassadorConfigs(mlDep, &p, pSvcName, engine_http_port, engine_grpc_port)
+			if err != nil {
+				return nil, err
+			}
+			psvc.Annotations["getambassador.io/config"] = ambassadorConfig
+		}
+
+		if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
+			log.Info("Creating Headless SVC")
+			psvc.Spec.ClusterIP = "None"
+		}
+		c.services = append(c.services, psvc)
+		c.serviceDetails[pSvcName] = &machinelearningv1alpha2.ServiceStatus{
+			SvcName:      pSvcName,
+			HttpEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_http_port),
+			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
+		}
+
+
+
 	}
 
-	if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
-		log.Info("Creating Headless SVC")
-		svc.Spec.ClusterIP = "None"
-	}
-	c.services = append(c.services, svc)
-	c.serviceDetails[seldonId] = &machinelearningv1alpha2.ServiceStatus{
-		SvcName:      seldonId,
-		HttpEndpoint: seldonId + "." + namespace + ":" + strconv.Itoa(engine_http_port),
-		GrpcEndpoint: seldonId + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
-	}
-
+	//TODO Fixme - not changed to handle per predictor scenario
 	if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
 		vsvcs, dstRule := createIstioResources(mlDep, seldonId, namespace, engine_http_port, engine_grpc_port)
-		c.virtualService = vsvcs
-		c.destinationRule = dstRule
+		c.virtualServices = vsvcs
+		c.destinationRules = dstRule
 	}
-
 	return &c, nil
 }
 
 // Create Services specified in components.
 func createIstioServices(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) (bool, error) {
 	ready := true
-	for _, svc := range components.virtualService {
+	for _, svc := range components.virtualServices {
 		if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
 			return ready, err
 		}
@@ -766,8 +782,8 @@ func createIstioServices(r *ReconcileSeldonDeployment, components *components, i
 
 	}
 
-	if components.destinationRule != nil {
-		drule := components.destinationRule
+	for _, drule := range components.destinationRules {
+
 		if err := controllerutil.SetControllerReference(instance, drule, r.scheme); err != nil {
 			return ready, err
 		}
