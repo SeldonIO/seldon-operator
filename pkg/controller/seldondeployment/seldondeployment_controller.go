@@ -270,7 +270,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 		LivenessProbe: &corev1.Probe{Handler: corev1.Handler{HTTPGet: &corev1.HTTPGetAction{Port: intstr.FromString("admin"), Path: "/ready", Scheme: corev1.URISchemeHTTP}},
 			InitialDelaySeconds: 20,
 			PeriodSeconds:       5,
-			FailureThreshold:    3,
+			FailureThreshold:    7,
 			SuccessThreshold:    1,
 			TimeoutSeconds:      2},
 		Lifecycle: &corev1.Lifecycle{
