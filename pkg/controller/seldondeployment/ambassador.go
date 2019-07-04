@@ -31,7 +31,7 @@ type AmbassadorConfig struct {
 	TimeoutMs    int                    `yaml:"timeout_ms"`
 	Headers      map[string]string      `yaml:"headers,omitempty"`
 	RegexHeaders map[string]string      `yaml:"regex_headers,omitempty"`
-	Weight       int32                    `yaml:"weight,omitempty"`
+	Weight       int32                  `yaml:"weight,omitempty"`
 	Shadow       *bool                  `yaml:"shadow,omitempty"`
 	RetryPolicy  *AmbassadorRetryPolicy `yaml:"retry_policy,omitempty"`
 }
@@ -68,7 +68,7 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Prefix:     "/seldon/" + serviceNameExternal + "/",
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_http_port),
 		TimeoutMs:  timeout,
-		Weight: weight,
+		Weight:     weight,
 	}
 
 	if addNamespace {
