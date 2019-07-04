@@ -55,6 +55,8 @@ const (
 
 	DEFAULT_ENGINE_CONTAINER_PORT = 8000
 	DEFAULT_ENGINE_GRPC_PORT      = 5001
+
+	AMBASSADOR_ANNOTATION = "getambassador.io/config"
 )
 
 var log = logf.Log.WithName("seldon-controller")
@@ -472,7 +474,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 			},
 			Spec: istio.DestinationRuleSpec{
 				Host: pSvcName,
-				Subsets: []istio.Subset {
+				Subsets: []istio.Subset{
 					{
 						Name: p.Name,
 						Labels: map[string]string{
@@ -544,7 +546,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
 		pSvcName := machinelearningv1alpha2.GetPredictorKey(mlDep, &p)
-		log.Info("pSvcName","val", pSvcName)
+		log.Info("pSvcName", "val", pSvcName)
 		// Add engine deployment if separate
 		_, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]
 		if hasSeparateEnginePod {
@@ -705,7 +707,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			if err != nil {
 				return nil, err
 			}
-			psvc.Annotations["getambassador.io/config"] = ambassadorConfig
+			psvc.Annotations[AMBASSADOR_ANNOTATION] = ambassadorConfig
 		}
 
 		if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
@@ -718,8 +720,6 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			HttpEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_http_port),
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
-
-
 
 	}
 
@@ -832,9 +832,15 @@ func createIstioServices(r *ReconcileSeldonDeployment, components *components, i
 }
 
 // Create Services specified in components.
-func createServices(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment) (bool, error) {
+func createServices(r *ReconcileSeldonDeployment, components *components, instance *machinelearningv1alpha2.SeldonDeployment, all bool) (bool, error) {
 	ready := true
 	for _, svc := range components.services {
+		if !all {
+			if _,ok := svc.Annotations[AMBASSADOR_ANNOTATION]; ok {
+				log.Info("Skipping Ambassador Svc")
+				continue
+			}
+		}
 		if err := controllerutil.SetControllerReference(instance, svc, r.scheme); err != nil {
 			return ready, err
 		}
@@ -1019,12 +1025,26 @@ func createDeployments(r *ReconcileSeldonDeployment, components *components, ins
 		}
 	}
 
+	// Add new services
 	// Clean up any old deployments and services
-	// 1. Delete any svc-orchestroator deployments
-	// 2. Delete any other deployments
-	// 3. Delete any services
+	// 1. Create any mew services or virtual services
+	// 2. Delete any svc-orchestroator deployments
+	// 3. Delete any other deployments
+	// 4. Delete any old services
 	// Deletion is done in foreground so we wait for underlying pods to be removed
 	if ready {
+
+		//Create services
+		ready, err := createServices(r, components, instance, true)
+		if err != nil {
+			return false, err
+		}
+
+		ready, err = createIstioServices(r, components, instance)
+		if err != nil {
+			return false, err
+		}
+
 		statusCopy := instance.Status.DeepCopy()
 		//delete from copied status the current expected deployments by name
 		for _, deploy := range components.deployments {
@@ -1149,7 +1169,7 @@ func (r *ReconcileSeldonDeployment) Reconcile(request reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 
-	servicesReady, err := createServices(r, components, instance)
+	servicesReady, err := createServices(r, components, instance, false)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
