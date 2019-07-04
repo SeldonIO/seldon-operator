@@ -836,7 +836,7 @@ func createServices(r *ReconcileSeldonDeployment, components *components, instan
 	ready := true
 	for _, svc := range components.services {
 		if !all {
-			if _,ok := svc.Annotations[AMBASSADOR_ANNOTATION]; ok {
+			if _, ok := svc.Annotations[AMBASSADOR_ANNOTATION]; ok {
 				log.Info("Skipping Ambassador Svc")
 				continue
 			}
