@@ -68,7 +68,11 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		Prefix:     "/seldon/" + serviceNameExternal + "/",
 		Service:    serviceName + "." + namespace + ":" + strconv.Itoa(engine_http_port),
 		TimeoutMs:  timeout,
-		Weight:     weight,
+		RetryPolicy: &AmbassadorRetryPolicy{
+			RetryOn:    "connect-failure",
+			NumRetries: 3,
+		},
+		Weight: weight,
 	}
 
 	if addNamespace {
