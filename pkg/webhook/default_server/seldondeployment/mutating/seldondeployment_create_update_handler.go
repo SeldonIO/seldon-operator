@@ -41,7 +41,8 @@ var (
 	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
 	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
 	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
-	DefaultTFServerImageName = "seldonio/tfserving-proxy:0.3"
+	DefaultTFServerImageNameRest = "seldonio/tfserving-proxy_rest:0.3"
+	DefaultTFServerImageNameGrpc = "seldonio/tfserving-proxy_grpc:0.3"
 )
 
 func init() {
@@ -103,8 +104,9 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 		ty := machinelearningv1alpha2.MODEL
 		pu.Type = &ty
 
-		//Hardwired to REST at present as grpc requires extra parameters to get correct proto to send to tfserving server
-		pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
+		if pu.Endpoint == nil {
+			pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
+		}
 
 		c := utils.GetContainerForPredictiveUnit(p, pu.Name)
 		existing := c != nil
@@ -114,19 +116,30 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			}
 		}
 
+		var uriParam machinelearningv1alpha2.Parameter
 		//Add missing fields
 		// Add image
 		if c.Image == "" {
-			c.Image = DefaultTFServerImageName
+			if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+				c.Image = DefaultTFServerImageNameRest
+				uriParam = machinelearningv1alpha2.Parameter{
+					Name:  "rest_endpoint",
+					Type:  "STRING",
+					Value: "http://0.0.0.0:2001",
+				}
+			} else {
+				c.Image = DefaultTFServerImageNameGrpc
+				uriParam = machinelearningv1alpha2.Parameter{
+					Name:  "grpc_endpoint",
+					Type:  "STRING",
+					Value: "0.0.0.0:2000",
+				}
+
+			}
 			c.ImagePullPolicy = v1.PullAlways
 		}
 
-		// Add parameters envvar
-		uriParam := machinelearningv1alpha2.Parameter{
-			Name:  "rest_endpoint",
-			Type:  "STRING",
-			Value: "http://0.0.0.0:2001",
-		}
+		// Add parameters
 		if pu.Parameters == nil {
 			pu.Parameters = []machinelearningv1alpha2.Parameter{}
 		}
