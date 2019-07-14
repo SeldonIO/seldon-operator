@@ -41,7 +41,7 @@ var (
 	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
 	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
 	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
-	DefaultTFServerImageName = "seldonio/tfserving-proxy:0.1"
+	DefaultTFServerImageName = "seldonio/tfserving-proxy:0.3"
 )
 
 func init() {
@@ -118,23 +118,19 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 		// Add image
 		if c.Image == "" {
 			c.Image = DefaultTFServerImageName
+			c.ImagePullPolicy = v1.PullAlways
 		}
 
 		// Add parameters envvar
-		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
-			params := []machinelearningv1alpha2.Parameter{
-				{
-					Name:  "rest_endpoint",
-					Type:  "STRING",
-					Value: "http://0.0.0.0:2000",
-				},
-			}
-			paramStr, err := json.Marshal(params)
-			if err != nil {
-				return err
-			}
-			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
+		uriParam := machinelearningv1alpha2.Parameter{
+			Name:  "rest_endpoint",
+			Type:  "STRING",
+			Value: "http://0.0.0.0:2001",
 		}
+		if pu.Parameters == nil {
+			pu.Parameters = []machinelearningv1alpha2.Parameter{}
+		}
+		pu.Parameters = append(pu.Parameters,uriParam)
 
 		// Add container to componentSpecs
 		if !existing {
@@ -153,16 +149,21 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 
 		tfServingContainer := v1.Container{
 			Name:  "tfserving",
-			Image: "gcr.io/kubeflow-images-public/tensorflow-serving-1.7:v20180604-0da89b8a",
+			Image: "tensorflow/serving:latest",
 			Args: []string{
 				"/usr/bin/tensorflow_model_server",
 				"--port=2000",
+				"--rest_api_port=2001",
 				"--model_name="+pu.Name,
 				"--model_base_path=" + pu.ModelURI},
 			ImagePullPolicy: v1.PullIfNotPresent,
 			Ports: []v1.ContainerPort{
 				{
 					ContainerPort: 2000,
+					Protocol: v1.ProtocolTCP,
+				},
+				{
+					ContainerPort: 2001,
 					Protocol: v1.ProtocolTCP,
 				},
 			},
@@ -209,13 +210,13 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 		}
 		// Add parameters envvar
 		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
-			params := []machinelearningv1alpha2.Parameter{
-				{
+			params := pu.Parameters
+			uriParam := machinelearningv1alpha2.Parameter{
 					Name:  "model_uri",
 					Type:  "STRING",
 					Value: pu.ModelURI,
-				},
 			}
+			params = append(params,uriParam)
 			paramStr, err := json.Marshal(params)
 			if err != nil {
 				return err
