@@ -209,6 +209,8 @@ const (
 	SIMPLE_ROUTER          PredictiveUnitImplementation = "SIMPLE_ROUTER"
 	RANDOM_ABTEST          PredictiveUnitImplementation = "RANDOM_ABTEST"
 	AVERAGE_COMBINER       PredictiveUnitImplementation = "AVERAGE_COMBINER"
+	SKLEARN_SERVER         PredictiveUnitImplementation = "SKLEARN_SERVER"
+	XGBOOST_SERVER         PredictiveUnitImplementation = "XGBOOST_SERVER"
 )
 
 type PredictiveUnitMethod string
@@ -258,6 +260,7 @@ type PredictiveUnit struct {
 	Methods        *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
 	Endpoint       *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
 	Parameters     []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
+	ModelURI       string                        `json:"modelUri,omitempty" protobuf:"bytes,8,opt,name=modelUri"`
 }
 
 type DeploymentStatus struct {

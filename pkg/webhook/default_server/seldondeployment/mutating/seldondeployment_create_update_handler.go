@@ -19,17 +19,28 @@ package mutating
 import (
 	"context"
 	"encoding/json"
+	"github.com/seldonio/seldon-operator/pkg/utils"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"net/http"
 	"os"
 	"strconv"
+	"fmt"
 
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
+	"github.com/seldonio/seldon-operator/pkg/constants"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission/types"
+)
+
+var (
+	DefaultSKLearnServerImageNameRest = "seldonio/sklearnserver_rest:0.1"
+	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
+	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
+	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
 )
 
 func init() {
@@ -84,6 +95,83 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 	}
 }
 
+func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) {
+
+	fmt.Println("looking for models")
+	if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
+		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
+
+		ty := machinelearningv1alpha2.MODEL
+		pu.Type = &ty
+
+		if pu.Endpoint == nil {
+			pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
+		}
+		c := utils.GetContainerForPredictiveUnit(p, pu.Name)
+		existing := c != nil
+		if !existing {
+			c = &v1.Container{
+				Name: pu.Name,
+			}
+		}
+
+		//Add missing fields
+		// Add image
+		if c.Image == "" {
+			if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER {
+				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+					c.Image = DefaultSKLearnServerImageNameRest
+				} else {
+					c.Image = DefaultSKLearnServerImageNameGrpc
+				}
+			} else if *pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
+				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+					c.Image = DefaultXGBoostServerImageNameRest
+				} else {
+					c.Image = DefaultXGBoostServerImageNameGrpc
+				}
+			}
+		}
+		// Add parameters envvar
+		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
+			params := []machinelearningv1alpha2.Parameter{
+				{
+					Name:  "model_uri",
+					Type:  "STRING",
+					Value: pu.ModelURI,
+				},
+			}
+			paramStr, err := json.Marshal(params)
+			if err != nil {
+
+			}
+			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
+		}
+
+		// Add container to componentSpecs
+		if !existing {
+			if len(p.ComponentSpecs) > 0 {
+				p.ComponentSpecs[0].Spec.Containers = append(p.ComponentSpecs[0].Spec.Containers, *c)
+			} else {
+				podSpec := machinelearningv1alpha2.SeldonPodSpec{
+					Metadata: metav1.ObjectMeta{CreationTimestamp: metav1.Now()},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{*c},
+					},
+				}
+				p.ComponentSpecs = []*machinelearningv1alpha2.SeldonPodSpec{&podSpec}
+			}
+		}
+	}
+
+
+
+	for i := 0; i < len(pu.Children); i++ {
+		addModelServerContainers(&pu.Children[i],p)
+	}
+
+}
+
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
 	var nextPortNum int32 = 9000
 	var terminationGracePeriod int64 = 20
@@ -116,6 +204,13 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			p.Labels["version"] = p.Name
 		}
 		addDefaultsToGraph(p.Graph)
+		addModelServerContainers(p.Graph,&p)
+		fmt.Println("predictor is now")
+		jstr,_ := json.Marshal(p)
+		fmt.Println(string(jstr))
+
+		mlDep.Spec.Predictors[i] = p
+
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 
