@@ -41,6 +41,7 @@ var (
 	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
 	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
 	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
+	DefaultTFServerImageName = "seldonio/tfserving-proxy:0.1"
 )
 
 func init() {
@@ -95,9 +96,83 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 	}
 }
 
-func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) {
+func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) error {
 
-	fmt.Println("looking for models")
+	if *pu.Implementation == machinelearningv1alpha2.TENSORFLOW_SERVER {
+
+		ty := machinelearningv1alpha2.MODEL
+		pu.Type = &ty
+
+		//Hardwired to REST at present as grpc requires extra parameters to get correct proto to send to tfserving server
+		pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
+
+		c := utils.GetContainerForPredictiveUnit(p, pu.Name)
+		existing := c != nil
+		if !existing {
+			c = &v1.Container{
+				Name: pu.Name,
+			}
+		}
+
+		//Add missing fields
+		// Add image
+		if c.Image == "" {
+			c.Image = DefaultTFServerImageName
+		}
+
+		// Add parameters envvar
+		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
+			params := []machinelearningv1alpha2.Parameter{
+				{
+					Name:  "rest_endpoint",
+					Type:  "STRING",
+					Value: "http://0.0.0.0:2000",
+				},
+			}
+			paramStr, err := json.Marshal(params)
+			if err != nil {
+				return err
+			}
+			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
+		}
+
+		// Add container to componentSpecs
+		if !existing {
+			if len(p.ComponentSpecs) > 0 {
+				p.ComponentSpecs[0].Spec.Containers = append(p.ComponentSpecs[0].Spec.Containers, *c)
+			} else {
+				podSpec := machinelearningv1alpha2.SeldonPodSpec{
+					Metadata: metav1.ObjectMeta{CreationTimestamp: metav1.Now()},
+					Spec: v1.PodSpec{
+						Containers: []v1.Container{*c},
+					},
+				}
+				p.ComponentSpecs = []*machinelearningv1alpha2.SeldonPodSpec{&podSpec}
+			}
+		}
+
+		tfServingContainer := v1.Container{
+			Name:  "tfserving",
+			Image: "gcr.io/kubeflow-images-public/tensorflow-serving-1.7:v20180604-0da89b8a",
+			Args: []string{
+				"/usr/bin/tensorflow_model_server",
+				"--port=2000",
+				"--model_name="+pu.Name,
+				"--model_base_path=" + pu.ModelURI},
+			ImagePullPolicy: v1.PullIfNotPresent,
+			Ports: []v1.ContainerPort{
+				{
+					ContainerPort: 2000,
+					Protocol: v1.ProtocolTCP,
+				},
+			},
+		}
+		p.ComponentSpecs[0].Spec.Containers = append(p.ComponentSpecs[0].Spec.Containers, tfServingContainer)
+	}
+	return nil
+}
+
+func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) error {
 	if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
 		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
 
@@ -143,7 +218,7 @@ func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *mac
 			}
 			paramStr, err := json.Marshal(params)
 			if err != nil {
-
+				return err
 			}
 			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
 		}
@@ -163,13 +238,24 @@ func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *mac
 			}
 		}
 	}
+	return nil
+}
 
+func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) error {
 
-
-	for i := 0; i < len(pu.Children); i++ {
-		addModelServerContainers(&pu.Children[i],p)
+	if err := addModelDefaultServers(pu,p); err != nil {
+		return err
+	}
+	if err := addTFServerContainer(pu,p); err != nil {
+		return err
 	}
 
+	for i := 0; i < len(pu.Children); i++ {
+		if err := addModelServerContainers(&pu.Children[i],p) ; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
@@ -204,7 +290,9 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			p.Labels["version"] = p.Name
 		}
 		addDefaultsToGraph(p.Graph)
-		addModelServerContainers(p.Graph,&p)
+		if err := addModelServerContainers(p.Graph,&p); err != nil {
+			return err
+		}
 		fmt.Println("predictor is now")
 		jstr,_ := json.Marshal(p)
 		fmt.Println(string(jstr))
@@ -315,6 +403,17 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 						pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
 					}
 					pu.Endpoint.ServicePort = portNum
+				} else {
+					// Add some defaults for easier diffs later in controller
+					if con.TerminationMessagePath == "" {
+						con.TerminationMessagePath = "/dev/termination-log"
+					}
+					if con.TerminationMessagePolicy == "" {
+						con.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+					}
+					if con.ImagePullPolicy == "" {
+						con.ImagePullPolicy = corev1.PullIfNotPresent
+					}
 				}
 			}
 		}
