@@ -80,6 +80,10 @@ func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
 	}
 }
 
+func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) string {
+	return sdepName+"-"+predictorSpec.Name+"-explainer"
+}
+
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
 	if len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
@@ -171,11 +175,18 @@ type PredictorSpec struct {
 	Labels          map[string]string       `json:"labels,omitempty" protobuf:"bytes,7,opt,name=labels"`
 	SvcOrchSpec     SvcOrchSpec             `json:"svcOrchSpec,omitempty" protobuf:"bytes,8,opt,name=svcOrchSpec"`
 	Traffic         int32                   `json:"traffic,omitempty" protobuf:"bytes,9,opt,name=traffic"`
+	Explainer       Explainer               `json:"explainer,omitempty" protobuf:"bytes,8,opt,name=explainer"`
 }
 
 type SvcOrchSpec struct {
 	Resources *v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,1,opt,name=resources"`
 	Env       []*v1.EnvVar             `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
+}
+
+type Explainer struct {
+	Type            string                  `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
+	ModelUri        string                  `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
+	ContainerSpec   v1.Container            `json:"containerSpec,omitempty" protobuf:"bytes,3,opt,name=containerSpec"`
 }
 
 type SeldonPodSpec struct {

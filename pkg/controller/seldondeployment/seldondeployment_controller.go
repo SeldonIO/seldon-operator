@@ -718,6 +718,10 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
 
+		err = createExplainer(mlDep, &p, psvc, &c)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	//TODO Fixme - not changed to handle per predictor scenario
@@ -727,6 +731,73 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 		c.destinationRules = dstRule
 	}
 	return &c, nil
+}
+
+func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) (error) {
+
+	if p.Explainer.Type != "" {
+
+		// TODO: switch to alibi image
+		tfServingContainer := corev1.Container{
+		Name:  "tfserving",
+		Image: "tensorflow/serving:latest",
+		Args: []string{
+			"/usr/bin/tensorflow_model_server",
+			"--port=2000",
+			"--rest_api_port=2001",
+			"--model_name="+p.Explainer.ModelUri,
+			"--model_base_path=" + p.Explainer.ModelUri},
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Ports: []corev1.ContainerPort{
+			{
+				ContainerPort: 2000,
+				Protocol: corev1.ProtocolTCP,
+			},
+			{
+				ContainerPort: 2001,
+				Protocol: corev1.ProtocolTCP,
+			},
+		},
+		}
+
+		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
+		namespace := getNamespace(mlDep)
+
+		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name,p)
+		deploy := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      depName,
+				Namespace: namespace,
+				Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
+						Annotations: mlDep.Spec.Annotations,
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{ tfServingContainer },
+					},
+				},
+				Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
+			},
+		}
+
+		// TODO: handle initContainer and env vars
+		// see https://github.com/kubeflow/kfserving/blob/master/pkg/webhook/admission/deployment/model_initializer_injector.go#L50
+		//also if user sets ContainerSpec with image then use that
+		//if user specifies ContainerSpec without image then merge with what we have
+		c.deployments = append(c.deployments, deploy)
+
+		// TODO: create Service
+
+		}
+
+		return nil
 }
 
 // Create Services specified in components.

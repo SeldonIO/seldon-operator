@@ -101,6 +101,12 @@ spec:
                   replicas:
                     format: int32
                     type: integer
+                  explainer:
+                    properties:
+                      modelUri:
+                        type: string
+                      type:
+                        type: string
                   svcOrchSpec:
                     properties:
                       env:
