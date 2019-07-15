@@ -76,6 +76,8 @@ spec:
                         items:
                           type: string
                         type: array
+                      modelUri:
+                        type: string
                       name:
                         type: string
                       parameters:

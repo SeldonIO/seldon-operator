@@ -18,6 +18,7 @@ package validating
 
 import (
 	"context"
+	"github.com/seldonio/seldon-operator/pkg/utils"
 	"net/http"
 
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
@@ -46,24 +47,11 @@ type SeldonDeploymentCreateUpdateHandler struct {
 	Decoder types.Decoder
 }
 
-func getContainerForPredictiveUnit(p *machinelearningv1alpha2.PredictorSpec, name string) bool {
-	for j := 0; j < len(p.ComponentSpecs); j++ {
-		cSpec := p.ComponentSpecs[j]
-		for k := 0; k < len(cSpec.Spec.Containers); k++ {
-			c := cSpec.Spec.Containers[k]
-			if c.Name == name {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // Check the predictive units to ensure the graph matches up with defined containers.
 func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) (bool, string) {
 	if *pu.Implementation == machinelearningv1alpha2.UNKNOWN_IMPLEMENTATION {
 
-		if !getContainerForPredictiveUnit(p, pu.Name) {
+		if utils.GetContainerForPredictiveUnit(p, pu.Name) == nil {
 			return false, "Can't find container for Preditive Unit " + pu.Name
 		}
 
@@ -71,10 +59,18 @@ func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			return false, "Predictive Unit " + pu.Name + " has no implementation methods defined. Change to a know type or add what methods it defines"
 		}
 
-		for i := 0; i < len(pu.Children); i++ {
-			checkPredictiveUnits(&pu.Children[i], p)
+	} else if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
+		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER  ||
+		*pu.Implementation == machinelearningv1alpha2.TENSORFLOW_SERVER {
+		if pu.ModelURI == "" {
+			return false, "Predictive unit " + pu.Name + " modelUri required when using standalone servers"
 		}
 	}
+
+	for i := 0; i < len(pu.Children); i++ {
+		checkPredictiveUnits(&pu.Children[i], p)
+	}
+
 	return true, ""
 }
 

@@ -215,9 +215,6 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	pCopy := p.DeepCopy()
 	// Set traffic to zero to ensure this doesn't cause a diff in the resulting  deployment created
 	pCopy.Traffic = 0
-	jStr1, err := json.Marshal(pCopy)
-	fmt.Println("Predictor to be base64 encoded------>")
-	fmt.Println(string(jStr1))
 	predictorB64, err := getEngineVarJson(pCopy)
 	if err != nil {
 		return nil, err
