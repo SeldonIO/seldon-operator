@@ -9,9 +9,9 @@ func GetContainerForPredictiveUnit(p *machinelearningv1alpha2.PredictorSpec, nam
 	for j := 0; j < len(p.ComponentSpecs); j++ {
 		cSpec := p.ComponentSpecs[j]
 		for k := 0; k < len(cSpec.Spec.Containers); k++ {
-			c := cSpec.Spec.Containers[k]
+			c := &cSpec.Spec.Containers[k]
 			if c.Name == name {
-				return &c
+				return c
 			}
 		}
 	}
