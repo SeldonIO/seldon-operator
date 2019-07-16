@@ -764,6 +764,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		namespace := getNamespace(mlDep)
 
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
+		// TODO: this may just be an in-line struct def but isn't it duplicated?
 		deploy := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      depName,
@@ -789,6 +790,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, r.Client)
 		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
+		// add Service/VirtualService for explainer
 		//also if user sets ContainerSpec with image then use that
 		//if user specifies ContainerSpec without image then merge with what we have
 		c.deployments = append(c.deployments, deploy)

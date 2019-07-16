@@ -34,7 +34,7 @@ func TestS3Secret(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "s3-secret",
 					Annotations: map[string]string{
-						KFServiceS3SecretEndpointAnnotation: "s3.aws.com",
+						KFServingAPIGroupName + S3SecretEndpointAnnotation: "s3.aws.com",
 					},
 				},
 			},
@@ -77,9 +77,9 @@ func TestS3Secret(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "s3-secret",
 					Annotations: map[string]string{
-						KFServiceS3SecretEndpointAnnotation: "s3.aws.com",
-						KFServiceS3SecretHttpsAnnotation:    "0",
-						KFServiceS3SecretSSLAnnotation:      "0",
+						KFServingAPIGroupName + S3SecretEndpointAnnotation: "s3.aws.com",
+						KFServingAPIGroupName + S3SecretHttpsAnnotation:    "0",
+						KFServingAPIGroupName + S3SecretSSLAnnotation:      "0",
 					},
 				},
 			},

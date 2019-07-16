@@ -17,7 +17,6 @@ limitations under the License.
 package s3
 
 import (
-	"github.com/kubeflow/kfserving/pkg/constants"
 	"k8s.io/api/core/v1"
 )
 
@@ -31,6 +30,8 @@ const (
 	S3Endpoint             = "S3_ENDPOINT"
 	S3UseHttps             = "S3_USE_HTTPS"
 	S3VerifySSL            = "S3_VERIFY_SSL"
+	KFServingAPIGroupName  = "serving.kubeflow.org"
+	SeldonAPIGroupName     = "machinelearning.seldon.io"
 )
 
 type S3Config struct {
@@ -42,10 +43,10 @@ type S3Config struct {
 
 // TODO: either change group name to seldon or ideally support either
 var (
-	KFServiceS3SecretEndpointAnnotation = constants.KFServingAPIGroupName + "/" + "s3-endpoint"
-	KFServiceS3SecretRegionAnnotation   = constants.KFServingAPIGroupName + "/" + "s3-region"
-	KFServiceS3SecretSSLAnnotation      = constants.KFServingAPIGroupName + "/" + "s3-verifyssl"
-	KFServiceS3SecretHttpsAnnotation    = constants.KFServingAPIGroupName + "/" + "s3-usehttps"
+	S3SecretEndpointAnnotation = "/" + "s3-endpoint"
+	S3SecretRegionAnnotation   = "/" + "s3-region"
+	S3SecretSSLAnnotation      = "/" + "s3-verifyssl"
+	S3SecretHttpsAnnotation    = "/" + "s3-usehttps"
 )
 
 func BuildSecretEnvs(secret *v1.Secret, s3Config *S3Config) []v1.EnvVar {
@@ -82,12 +83,29 @@ func BuildSecretEnvs(secret *v1.Secret, s3Config *S3Config) []v1.EnvVar {
 			},
 		},
 	}
+	envsFromAnnotations := BuildEnvFromAnnotations(secret, s3Config, SeldonAPIGroupName, KFServingAPIGroupName)
+	envs = append(envs, envsFromAnnotations...)
+	return envs
+}
 
-	if s3Endpoint, ok := secret.Annotations[KFServiceS3SecretEndpointAnnotation]; ok {
+func getFromAnnotation(secret *v1.Secret, name string, prefix string, fallbackPrefix string) (string, bool) {
+	if value, ok := secret.Annotations[prefix+name]; ok {
+		return value, ok
+	} else if value, ok := secret.Annotations[fallbackPrefix+name]; ok {
+		return value, ok
+	}
+	return "", false
+}
+
+func BuildEnvFromAnnotations(secret *v1.Secret, s3Config *S3Config, prefix string, fallbackPrefix string) []v1.EnvVar {
+	envs := []v1.EnvVar{}
+
+	if s3Endpoint, ok := getFromAnnotation(secret, S3SecretEndpointAnnotation, prefix, fallbackPrefix); ok {
 		s3EndpointUrl := "https://" + s3Endpoint
-		if s3UseHttps, ok := secret.Annotations[KFServiceS3SecretHttpsAnnotation]; ok {
+		if s3UseHttps, ok := getFromAnnotation(secret, S3SecretHttpsAnnotation, prefix, fallbackPrefix); ok {
 			if s3UseHttps == "0" {
-				s3EndpointUrl = "http://" + secret.Annotations[KFServiceS3SecretEndpointAnnotation]
+				s3EndpointUrl, _ = getFromAnnotation(secret, S3SecretEndpointAnnotation, prefix, fallbackPrefix)
+				s3EndpointUrl = "http://" + s3EndpointUrl
 			}
 			envs = append(envs, v1.EnvVar{
 				Name:  S3UseHttps,
@@ -121,14 +139,14 @@ func BuildSecretEnvs(secret *v1.Secret, s3Config *S3Config) []v1.EnvVar {
 		})
 	}
 
-	if s3Region, ok := secret.Annotations[KFServiceS3SecretRegionAnnotation]; ok {
+	if s3Region, ok := getFromAnnotation(secret, S3SecretRegionAnnotation, prefix, fallbackPrefix); ok {
 		envs = append(envs, v1.EnvVar{
 			Name:  AWSRegion,
 			Value: s3Region,
 		})
 	}
 
-	if val, ok := secret.Annotations[KFServiceS3SecretSSLAnnotation]; ok {
+	if val, ok := getFromAnnotation(secret, S3SecretSSLAnnotation, prefix, fallbackPrefix); ok {
 		envs = append(envs, v1.EnvVar{
 			Name:  S3VerifySSL,
 			Value: val,

@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+//TODO: change to seldon
 const (
 	DefaultModelLocalMountPath       = "/mnt/models"
 	ModelInitializerContainerName    = "model-initializer"
