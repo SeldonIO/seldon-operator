@@ -59,6 +59,15 @@ spec:
                     type: array
                   engineResources:
                     type: object
+                  explainer:
+                    properties:
+                      containerSpec:
+                        type: object
+                      modelUri:
+                        type: string
+                      type:
+                        type: string
+                    type: object
                   graph:
                     properties:
                       children:
@@ -101,12 +110,6 @@ spec:
                   replicas:
                     format: int32
                     type: integer
-                  explainer:
-                    properties:
-                      modelUri:
-                        type: string
-                      type:
-                        type: string
                   svcOrchSpec:
                     properties:
                       env:

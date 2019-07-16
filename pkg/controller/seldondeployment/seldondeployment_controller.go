@@ -733,37 +733,37 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	return &c, nil
 }
 
-func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) (error) {
+func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) error {
 
 	if p.Explainer.Type != "" {
 
 		// TODO: switch to alibi image
 		tfServingContainer := corev1.Container{
-		Name:  "tfserving",
-		Image: "tensorflow/serving:latest",
-		Args: []string{
-			"/usr/bin/tensorflow_model_server",
-			"--port=2000",
-			"--rest_api_port=2001",
-			"--model_name="+p.Explainer.ModelUri,
-			"--model_base_path=" + p.Explainer.ModelUri},
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Ports: []corev1.ContainerPort{
-			{
-				ContainerPort: 2000,
-				Protocol: corev1.ProtocolTCP,
+			Name:  "tfserving",
+			Image: "tensorflow/serving:latest",
+			Args: []string{
+				"/usr/bin/tensorflow_model_server",
+				"--port=2000",
+				"--rest_api_port=2001",
+				"--model_name=" + p.Explainer.ModelUri,
+				"--model_base_path=" + p.Explainer.ModelUri},
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Ports: []corev1.ContainerPort{
+				{
+					ContainerPort: 2000,
+					Protocol:      corev1.ProtocolTCP,
+				},
+				{
+					ContainerPort: 2001,
+					Protocol:      corev1.ProtocolTCP,
+				},
 			},
-			{
-				ContainerPort: 2001,
-				Protocol: corev1.ProtocolTCP,
-			},
-		},
 		}
 
 		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
 		namespace := getNamespace(mlDep)
 
-		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name,p)
+		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 		deploy := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      depName,
@@ -780,24 +780,24 @@ func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machine
 						Annotations: mlDep.Spec.Annotations,
 					},
 					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{ tfServingContainer },
+						Containers: []corev1.Container{tfServingContainer},
 					},
 				},
 				Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
 			},
 		}
 
-		// TODO: handle initContainer and env vars
-		// see https://github.com/kubeflow/kfserving/blob/master/pkg/webhook/admission/deployment/model_initializer_injector.go#L50
+		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri)
+		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
 		//also if user sets ContainerSpec with image then use that
 		//if user specifies ContainerSpec without image then merge with what we have
 		c.deployments = append(c.deployments, deploy)
 
 		// TODO: create Service
 
-		}
+	}
 
-		return nil
+	return nil
 }
 
 // Create Services specified in components.

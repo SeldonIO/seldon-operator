@@ -14,17 +14,19 @@ limitations under the License.
 package seldondeployment
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/seldonio/seldon-operator/pkg/controller/resources/credentials"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	DefaultModelLocalMountPath = "/mnt/models"
+	DefaultModelLocalMountPath       = "/mnt/models"
 	ModelInitializerContainerName    = "model-initializer"
 	ModelInitializerVolumeName       = "kfserving-provision-location"
 	ModelInitializerContainerImage   = "gcr.io/kfserving/model-initializer"
@@ -36,29 +38,27 @@ const (
 )
 
 var (
-	KFServingName         = "kfserving"
-	KFServingNamespace    = getEnv("POD_NAMESPACE", "seldon-system")
-	KFServiceConfigMapName = "seldon-config"
+	ControllerNamespace     = getEnv("POD_NAMESPACE", "seldon-system")
+	ControllerConfigMapName = "seldon-config"
 )
 
-func credentialsBuilder() *CredentialBuilder {
-	var Client client.Client
+func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.CredentialBuilder, err error) {
 
-	configMap := &v1.ConfigMap{}
-	err := Client.Get(context.TODO(), k8types.NamespacedName{Name: constants.KFServiceConfigMapName, Namespace: constants.KFServingNamespace}, configMap)
+	configMap := &corev1.ConfigMap{}
+	err = Client.Get(context.TODO(), types.NamespacedName{Name: ControllerConfigMapName, Namespace: ControllerNamespace}, configMap)
 	if err != nil {
-		log.Error(err, "Failed to find config map", "name", constants.KFServiceConfigMapName)
-		return admission.ErrorResponse(http.StatusInternalServerError, err)
+		log.Error(err, "Failed to find config map", "name", ControllerConfigMapName)
+		return nil, err
 	}
 
-	credentialBuilder := credentials.NewCredentialBulder(mutator.Client, configMap)
-	return credentialBuilder
+	credentialBuilder := credentials.NewCredentialBulder(Client, configMap)
+	return credentialBuilder, nil
 }
 
 // InjectModelInitializer injects an init container to provision model data
-func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Container) error {
+func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1.Container, srcURI string, Client client.Client) error {
 
-	annotations := deployment.Spec.Template.ObjectMeta.Annotations
+	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
 	podSpec := &deployment.Spec.Template.Spec
 
 	// Dont inject if InitContianer already injected
@@ -68,21 +68,8 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 		}
 	}
 
-	// Find the knative user-container (this is the model inference server)
-	var userContainer *v1.Container
-	for idx, container := range podSpec.Containers {
-		if strings.Compare(container.Name, UserContainerName) == 0 {
-			userContainer = &podSpec.Containers[idx]
-			break
-		}
-	}
-
-	if userContainer == nil {
-		return fmt.Errorf("Invalid configuration: cannot find container: %s", UserContainerName)
-	}
-
-	podVolumes := []v1.Volume{}
-	modelInitializerMounts := []v1.VolumeMount{}
+	podVolumes := []corev1.Volume{}
+	modelInitializerMounts := []corev1.VolumeMount{}
 
 	// For PVC source URIs we need to mount the source to be able to access it
 	// See design and discussion here: https://github.com/kubeflow/kfserving/issues/148
@@ -93,10 +80,10 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 		}
 
 		// add the PVC volume on the pod
-		pvcSourceVolume := v1.Volume{
+		pvcSourceVolume := corev1.Volume{
 			Name: PvcSourceMountName,
-			VolumeSource: v1.VolumeSource{
-				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: pvcName,
 				},
 			},
@@ -104,7 +91,7 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 		podVolumes = append(podVolumes, pvcSourceVolume)
 
 		// add a corresponding PVC volume mount to the INIT container
-		pvcSourceVolumeMount := v1.VolumeMount{
+		pvcSourceVolumeMount := corev1.VolumeMount{
 			Name:      PvcSourceMountName,
 			MountPath: PvcSourceMountPath,
 			ReadOnly:  true,
@@ -116,16 +103,16 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 	}
 
 	// Create a volume that is shared between the model-initializer and user-container
-	sharedVolume := v1.Volume{
+	sharedVolume := corev1.Volume{
 		Name: ModelInitializerVolumeName,
-		VolumeSource: v1.VolumeSource{
-			EmptyDir: &v1.EmptyDirVolumeSource{},
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
 	}
 	podVolumes = append(podVolumes, sharedVolume)
 
 	// Create a write mount into the shared volume
-	sharedVolumeWriteMount := v1.VolumeMount{
+	sharedVolumeWriteMount := corev1.VolumeMount{
 		Name:      ModelInitializerVolumeName,
 		MountPath: DefaultModelLocalMountPath,
 		ReadOnly:  false,
@@ -133,7 +120,7 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 	modelInitializerMounts = append(modelInitializerMounts, sharedVolumeWriteMount)
 
 	// Add an init container to run provisioning logic to the PodSpec
-	initContainer := &v1.Container{
+	initContainer := &corev1.Container{
 		Name:  ModelInitializerContainerName,
 		Image: ModelInitializerContainerImage + ":" + ModelInitializerContainerVersion,
 		Args: []string{
@@ -144,7 +131,7 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 	}
 
 	// Add a mount the shared volume on the user-container, update the PodSpec
-	sharedVolumeReadMount := v1.VolumeMount{
+	sharedVolumeReadMount := corev1.VolumeMount{
 		Name:      ModelInitializerVolumeName,
 		MountPath: DefaultModelLocalMountPath,
 		ReadOnly:  true,
@@ -155,7 +142,11 @@ func InjectModelInitializer(deployment *appsv1.Deployment, container *v1.Contain
 	podSpec.Volumes = append(podSpec.Volumes, podVolumes...)
 
 	// Inject credentials
-	if err := credentialsBuilder().CreateSecretVolumeAndEnv(
+	credentialsBuilder, err := credentialsBuilder(Client)
+	if err != nil {
+		return err
+	}
+	if err := credentialsBuilder.CreateSecretVolumeAndEnv(
 		deployment.Namespace,
 		podSpec.ServiceAccountName,
 		initContainer,

@@ -39,6 +39,7 @@ type S3Config struct {
 	S3Endpoint            string `json:"s3Endpoint,omitempty"`
 	S3UseHttps            string `json:"s3UseHttps,omitempty"`
 }
+
 // TODO: either change group name to seldon or ideally support either
 var (
 	KFServiceS3SecretEndpointAnnotation = constants.KFServingAPIGroupName + "/" + "s3-endpoint"

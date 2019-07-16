@@ -81,7 +81,7 @@ func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
 }
 
 func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) string {
-	return sdepName+"-"+predictorSpec.Name+"-explainer"
+	return sdepName + "-" + predictorSpec.Name + "-explainer"
 }
 
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
@@ -184,9 +184,9 @@ type SvcOrchSpec struct {
 }
 
 type Explainer struct {
-	Type            string                  `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
-	ModelUri        string                  `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
-	ContainerSpec   v1.Container            `json:"containerSpec,omitempty" protobuf:"bytes,3,opt,name=containerSpec"`
+	Type          string       `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
+	ModelUri      string       `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
+	ContainerSpec v1.Container `json:"containerSpec,omitempty" protobuf:"bytes,3,opt,name=containerSpec"`
 }
 
 type SeldonPodSpec struct {
