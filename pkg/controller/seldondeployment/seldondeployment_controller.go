@@ -558,31 +558,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 			// create Deployment from podspec
 			depName := machinelearningv1alpha2.GetDeploymentName(mlDep, p, cSpec)
-			deploy := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      depName,
-					Namespace: namespace,
-					Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
-				},
-				Spec: appsv1.DeploymentSpec{
-					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
-					},
-					Template: corev1.PodTemplateSpec{
-						ObjectMeta: metav1.ObjectMeta{
-							Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
-							Annotations: mlDep.Spec.Annotations,
-						},
-						Spec: cSpec.Spec,
-					},
-					Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
-				},
-			}
-
-			// add more annotations
-			for k, v := range cSpec.Metadata.Annotations {
-				deploy.Spec.Template.ObjectMeta.Annotations[k] = v
-			}
+			deploy := createBasicNonEngineDeployment(depName, seldonId, cSpec, &p, mlDep)
 
 			// Add HPA if needed
 			if cSpec.HpaSpec != nil {
@@ -619,12 +595,6 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
 				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
 
-			}
-
-			// add predictor labels
-			for k, v := range p.Labels {
-				deploy.ObjectMeta.Labels[k] = v
-				deploy.Spec.Template.ObjectMeta.Labels[k] = v
 			}
 
 			// create services for each container
@@ -733,6 +703,42 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 	return &c, nil
 }
 
+func createBasicNonEngineDeployment(depName string, seldonId string, seldonPodSpec *machinelearningv1alpha2.SeldonPodSpec, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment) *appsv1.Deployment {
+	deploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      depName,
+			Namespace: getNamespace(mlDep),
+			Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
+					Annotations: mlDep.Spec.Annotations,
+				},
+				Spec: seldonPodSpec.Spec,
+			},
+			Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
+		},
+	}
+
+	// add more annotations
+	for k, v := range seldonPodSpec.Metadata.Annotations {
+		deploy.Spec.Template.ObjectMeta.Annotations[k] = v
+	}
+
+	// add predictor labels
+	for k, v := range p.Labels {
+		deploy.ObjectMeta.Labels[k] = v
+		deploy.Spec.Template.ObjectMeta.Labels[k] = v
+	}
+
+	return deploy
+}
+
 func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) error {
 
 	if p.Explainer.Type != "" {
@@ -761,32 +767,13 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
-		namespace := getNamespace(mlDep)
 
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
-		// TODO: this may just be an in-line struct def but isn't it duplicated?
-		deploy := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      depName,
-				Namespace: namespace,
-				Labels:    map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
-			},
-			Spec: appsv1.DeploymentSpec{
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Labels:      map[string]string{machinelearningv1alpha2.Label_seldon_id: seldonId, "app": depName, "fluentd": "true"},
-						Annotations: mlDep.Spec.Annotations,
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{tfServingContainer},
-					},
-				},
-				Strategy: appsv1.DeploymentStrategy{RollingUpdate: &appsv1.RollingUpdateDeployment{MaxUnavailable: &intstr.IntOrString{StrVal: "10%"}}},
-			},
-		}
+
+		seldonPodSpec := machinelearningv1alpha2.SeldonPodSpec{Spec: corev1.PodSpec{
+			Containers: []corev1.Container{tfServingContainer},
+		}}
+		deploy := createBasicNonEngineDeployment(depName, seldonId, &seldonPodSpec, p, mlDep)
 
 		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, r.Client)
 		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
