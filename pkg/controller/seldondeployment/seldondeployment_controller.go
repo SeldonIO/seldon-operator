@@ -514,7 +514,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 }
 
 // Create all the components (Deployments, Services etc)
-func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
+func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
 	c := components{}
 	c.serviceDetails = map[string]*machinelearningv1alpha2.ServiceStatus{}
 	seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
@@ -718,7 +718,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
 
-		err = createExplainer(mlDep, &p, psvc, &c)
+		err = createExplainer(r, mlDep, &p, psvc, &c)
 		if err != nil {
 			return nil, err
 		}
@@ -733,7 +733,7 @@ func createComponents(mlDep *machinelearningv1alpha2.SeldonDeployment) (*compone
 	return &c, nil
 }
 
-func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) error {
+func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) error {
 
 	if p.Explainer.Type != "" {
 
@@ -787,7 +787,7 @@ func createExplainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machine
 			},
 		}
 
-		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri)
+		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, r.Client)
 		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
 		//also if user sets ContainerSpec with image then use that
 		//if user specifies ContainerSpec without image then merge with what we have
@@ -1228,7 +1228,7 @@ func (r *ReconcileSeldonDeployment) Reconcile(request reconcile.Request) (reconc
 		return reconcile.Result{}, err
 	}
 
-	components, err := createComponents(instance)
+	components, err := createComponents(r, instance)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
