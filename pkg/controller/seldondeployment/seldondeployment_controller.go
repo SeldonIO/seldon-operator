@@ -775,7 +775,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}}
 		deploy := createBasicNonEngineDeployment(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, r.Client)
+		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
 		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
 		// add Service/VirtualService for explainer
 		//also if user sets ContainerSpec with image then use that

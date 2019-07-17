@@ -184,9 +184,10 @@ type SvcOrchSpec struct {
 }
 
 type Explainer struct {
-	Type          string       `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
-	ModelUri      string       `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
-	ContainerSpec v1.Container `json:"containerSpec,omitempty" protobuf:"bytes,3,opt,name=containerSpec"`
+	Type               string       `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
+	ModelUri           string       `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
+	ServiceAccountName string       `json:"serviceAccountName,omitempty" protobuf:"string,3,opt,name=serviceAccountName"`
+	ContainerSpec      v1.Container `json:"containerSpec,omitempty" protobuf:"bytes,4,opt,name=containerSpec"`
 }
 
 type SeldonPodSpec struct {
@@ -265,14 +266,15 @@ type Parameter struct {
 }
 
 type PredictiveUnit struct {
-	Name           string                        `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
-	Children       []PredictiveUnit              `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
-	Type           *PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
-	Implementation *PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
-	Methods        *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
-	Endpoint       *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
-	Parameters     []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
-	ModelURI       string                        `json:"modelUri,omitempty" protobuf:"bytes,8,opt,name=modelUri"`
+	Name               string                        `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
+	Children           []PredictiveUnit              `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
+	Type               *PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
+	Implementation     *PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
+	Methods            *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
+	Endpoint           *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
+	Parameters         []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
+	ModelURI           string                        `json:"modelUri,omitempty" protobuf:"bytes,8,opt,name=modelUri"`
+	ServiceAccountName string                        `json:"serviceAccountName,omitempty" protobuf:"bytes,9,opt,name=serviceAccountName"`
 }
 
 type DeploymentStatus struct {

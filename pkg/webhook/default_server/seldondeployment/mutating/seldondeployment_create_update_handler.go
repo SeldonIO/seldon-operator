@@ -19,13 +19,13 @@ package mutating
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/seldonio/seldon-operator/pkg/utils"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"net/http"
 	"os"
 	"strconv"
-	"fmt"
 
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	"github.com/seldonio/seldon-operator/pkg/constants"
@@ -41,8 +41,8 @@ var (
 	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
 	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
 	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
-	DefaultTFServerImageNameRest = "seldonio/tfserving-proxy_rest:0.3"
-	DefaultTFServerImageNameGrpc = "seldonio/tfserving-proxy_grpc:0.3"
+	DefaultTFServerImageNameRest      = "seldonio/tfserving-proxy_rest:0.3"
+	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
 )
 
 func init() {
@@ -143,7 +143,7 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 		if pu.Parameters == nil {
 			pu.Parameters = []machinelearningv1alpha2.Parameter{}
 		}
-		pu.Parameters = append(pu.Parameters,uriParam)
+		pu.Parameters = append(pu.Parameters, uriParam)
 
 		// Add container to componentSpecs
 		if !existing {
@@ -167,17 +167,17 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 				"/usr/bin/tensorflow_model_server",
 				"--port=2000",
 				"--rest_api_port=2001",
-				"--model_name="+pu.Name,
+				"--model_name=" + pu.Name,
 				"--model_base_path=" + pu.ModelURI},
 			ImagePullPolicy: v1.PullIfNotPresent,
 			Ports: []v1.ContainerPort{
 				{
 					ContainerPort: 2000,
-					Protocol: v1.ProtocolTCP,
+					Protocol:      v1.ProtocolTCP,
 				},
 				{
 					ContainerPort: 2001,
-					Protocol: v1.ProtocolTCP,
+					Protocol:      v1.ProtocolTCP,
 				},
 			},
 		}
@@ -225,11 +225,11 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
 			params := pu.Parameters
 			uriParam := machinelearningv1alpha2.Parameter{
-					Name:  "model_uri",
-					Type:  "STRING",
-					Value: pu.ModelURI,
+				Name:  "model_uri",
+				Type:  "STRING",
+				Value: pu.ModelURI,
 			}
-			params = append(params,uriParam)
+			params = append(params, uriParam)
 			paramStr, err := json.Marshal(params)
 			if err != nil {
 				return err
@@ -257,15 +257,15 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 
 func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec) error {
 
-	if err := addModelDefaultServers(pu,p); err != nil {
+	if err := addModelDefaultServers(pu, p); err != nil {
 		return err
 	}
-	if err := addTFServerContainer(pu,p); err != nil {
+	if err := addTFServerContainer(pu, p); err != nil {
 		return err
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
-		if err := addModelServerContainers(&pu.Children[i],p) ; err != nil {
+		if err := addModelServerContainers(&pu.Children[i], p); err != nil {
 			return err
 		}
 	}
@@ -304,11 +304,11 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			p.Labels["version"] = p.Name
 		}
 		addDefaultsToGraph(p.Graph)
-		if err := addModelServerContainers(p.Graph,&p); err != nil {
+		if err := addModelServerContainers(p.Graph, &p); err != nil {
 			return err
 		}
 		fmt.Println("predictor is now")
-		jstr,_ := json.Marshal(p)
+		jstr, _ := json.Marshal(p)
 		fmt.Println(string(jstr))
 
 		mlDep.Spec.Predictors[i] = p

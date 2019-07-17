@@ -57,7 +57,7 @@ func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.C
 }
 
 // InjectModelInitializer injects an init container to provision model data
-func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1.Container, srcURI string, Client client.Client) error {
+func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1.Container, srcURI string, serviceAccountName string, Client client.Client) error {
 
 	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
 	podSpec := &deployment.Spec.Template.Spec
@@ -147,9 +147,13 @@ func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1
 	if err != nil {
 		return err
 	}
+	if serviceAccountName == "" {
+		serviceAccountName = podSpec.ServiceAccountName
+	}
+
 	if err := credentialsBuilder.CreateSecretVolumeAndEnv(
 		deployment.Namespace,
-		podSpec.ServiceAccountName,
+		serviceAccountName,
 		initContainer,
 		&podSpec.Volumes,
 	); err != nil {
