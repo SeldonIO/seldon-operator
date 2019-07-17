@@ -558,7 +558,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 			// create Deployment from podspec
 			depName := machinelearningv1alpha2.GetDeploymentName(mlDep, p, cSpec)
-			deploy := createBasicNonEngineDeployment(depName, seldonId, cSpec, &p, mlDep)
+			deploy := createDeploymentWithoutEngine(depName, seldonId, cSpec, &p, mlDep)
 
 			// Add HPA if needed
 			if cSpec.HpaSpec != nil {
@@ -600,46 +600,8 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				con := cSpec.Spec.Containers[0]
-				containerServiceKey := machinelearningv1alpha2.GetPredictorServiceNameKey(&con)
-				containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, &con)
-				pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
-				var portType string
-				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-					portType = "http"
-					c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
-						SvcName:      containerServiceValue,
-						HttpEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
-				} else {
-					portType = "grpc"
-					c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
-						SvcName:      containerServiceValue,
-						GrpcEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
-				}
-				svc := &corev1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      containerServiceValue,
-						Namespace: namespace,
-						Labels:    map[string]string{containerServiceKey: containerServiceValue, machinelearningv1alpha2.Label_seldon_id: mlDep.Spec.Name},
-					},
-					Spec: corev1.ServiceSpec{
-						Ports: []corev1.ServicePort{
-							{
-								Protocol:   corev1.ProtocolTCP,
-								Port:       pu.Endpoint.ServicePort,
-								TargetPort: intstr.FromInt(int(pu.Endpoint.ServicePort)),
-								Name:       portType,
-							},
-						},
-						Type:            corev1.ServiceTypeClusterIP,
-						Selector:        map[string]string{containerServiceKey: containerServiceValue},
-						SessionAffinity: corev1.ServiceAffinityNone,
-					},
-				}
 
-				//Add labels for this service to deployment
-				deploy.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
-				deploy.Spec.Selector.MatchLabels[containerServiceKey] = containerServiceValue
-				deploy.Spec.Template.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
+				svc := createContainerService(deploy, p, mlDep, con, c)
 
 				c.services = append(c.services, svc)
 			}
@@ -649,38 +611,11 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 		//Create Service for Predictor
 
-		psvc := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      pSvcName,
-				Namespace: namespace,
-				Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName,
-					machinelearningv1alpha2.Label_seldon_id: seldonId},
-			},
-			Spec: corev1.ServiceSpec{
-				Ports: []corev1.ServicePort{
-					{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
-					{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
-				},
-				Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName},
-				SessionAffinity: corev1.ServiceAffinityNone,
-				Type:            corev1.ServiceTypeClusterIP,
-			},
+		psvc, err := createPredictorService(pSvcName, seldonId, p, mlDep, engine_http_port, engine_grpc_port)
+		if err != nil {
+			return nil, err
 		}
 
-		if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
-			psvc.Annotations = make(map[string]string)
-			//Create top level Service
-			ambassadorConfig, err := getAmbassadorConfigs(mlDep, &p, pSvcName, engine_http_port, engine_grpc_port)
-			if err != nil {
-				return nil, err
-			}
-			psvc.Annotations[AMBASSADOR_ANNOTATION] = ambassadorConfig
-		}
-
-		if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
-			log.Info("Creating Headless SVC")
-			psvc.Spec.ClusterIP = "None"
-		}
 		c.services = append(c.services, psvc)
 		c.serviceDetails[pSvcName] = &machinelearningv1alpha2.ServiceStatus{
 			SvcName:      pSvcName,
@@ -688,6 +623,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
 
+		// TODO: explainer needs to know svc name of predictor it is explainer for
 		err = createExplainer(r, mlDep, &p, psvc, &c)
 		if err != nil {
 			return nil, err
@@ -703,7 +639,91 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 	return &c, nil
 }
 
-func createBasicNonEngineDeployment(depName string, seldonId string, seldonPodSpec *machinelearningv1alpha2.SeldonPodSpec, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment) *appsv1.Deployment {
+func createPredictorService(pSvcName string, seldonId string, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {
+	namespace := getNamespace(mlDep)
+
+	psvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pSvcName,
+			Namespace: namespace,
+			Labels: map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName,
+				machinelearningv1alpha2.Label_seldon_id: seldonId},
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
+				{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
+			},
+			Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName},
+			SessionAffinity: corev1.ServiceAffinityNone,
+			Type:            corev1.ServiceTypeClusterIP,
+		},
+	}
+
+	if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
+		psvc.Annotations = make(map[string]string)
+		//Create top level Service
+		ambassadorConfig, err := getAmbassadorConfigs(mlDep, &p, pSvcName, engine_http_port, engine_grpc_port)
+		if err != nil {
+			return nil, err
+		}
+		psvc.Annotations[AMBASSADOR_ANNOTATION] = ambassadorConfig
+	}
+
+	if getAnnotation(mlDep, machinelearningv1alpha2.ANNOTATION_HEADLESS_SVC, "false") != "false" {
+		log.Info("Creating Headless SVC")
+		psvc.Spec.ClusterIP = "None"
+	}
+	return psvc, err
+}
+
+func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, con corev1.Container, c components) *corev1.Service {
+	containerServiceKey := machinelearningv1alpha2.GetPredictorServiceNameKey(&con)
+	containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, &con)
+	pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
+	namespace := getNamespace(mlDep)
+	var portType string
+	if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+		portType = "http"
+		c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
+			SvcName:      containerServiceValue,
+			HttpEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
+	} else {
+		portType = "grpc"
+		c.serviceDetails[containerServiceValue] = &machinelearningv1alpha2.ServiceStatus{
+			SvcName:      containerServiceValue,
+			GrpcEndpoint: containerServiceValue + "." + namespace + ":" + strconv.Itoa(int(pu.Endpoint.ServicePort))}
+	}
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      containerServiceValue,
+			Namespace: namespace,
+			Labels:    map[string]string{containerServiceKey: containerServiceValue, machinelearningv1alpha2.Label_seldon_id: mlDep.Spec.Name},
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Protocol:   corev1.ProtocolTCP,
+					Port:       pu.Endpoint.ServicePort,
+					TargetPort: intstr.FromInt(int(pu.Endpoint.ServicePort)),
+					Name:       portType,
+				},
+			},
+			Type:            corev1.ServiceTypeClusterIP,
+			Selector:        map[string]string{containerServiceKey: containerServiceValue},
+			SessionAffinity: corev1.ServiceAffinityNone,
+		},
+	}
+
+	//Add labels for this service to deployment
+	deploy.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
+	deploy.Spec.Selector.MatchLabels[containerServiceKey] = containerServiceValue
+	deploy.Spec.Template.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
+
+	return svc
+}
+
+func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpec *machinelearningv1alpha2.SeldonPodSpec, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment) *appsv1.Deployment {
 	deploy := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      depName,
@@ -743,9 +763,13 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 	if p.Explainer.Type != "" {
 
+		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
+
+		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
+
 		// TODO: switch to alibi image
 		tfServingContainer := corev1.Container{
-			Name:  mlDep.Name + "-explainer",
+			Name:  depName,
 			Image: "tensorflow/serving:latest",
 			Args: []string{
 				"/usr/bin/tensorflow_model_server",
@@ -766,14 +790,10 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			},
 		}
 
-		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
-
-		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
-
 		seldonPodSpec := machinelearningv1alpha2.SeldonPodSpec{Spec: corev1.PodSpec{
 			Containers: []corev1.Container{tfServingContainer},
 		}}
-		deploy := createBasicNonEngineDeployment(depName, seldonId, &seldonPodSpec, p, mlDep)
+		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
 		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
 		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args

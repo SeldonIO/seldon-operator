@@ -81,7 +81,12 @@ func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
 }
 
 func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) string {
-	return sdepName + "-" + predictorSpec.Name + "-explainer"
+	name := sdepName + "-" + predictorSpec.Name + "-explainer"
+	if len(name) > 63 {
+		return "seldon-" + hash(name)
+	} else {
+		return name
+	}
 }
 
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
