@@ -288,12 +288,14 @@ type DeploymentStatus struct {
 	Description       string `json:"description,omitempty" protobuf:"string,3,opt,name=description"`
 	Replicas          int32  `json:"replicas,omitempty" protobuf:"string,4,opt,name=replicas"`
 	AvailableReplicas int32  `json:"availableReplicas,omitempty" protobuf:"string,5,opt,name=availableRelicas"`
+	ExplainerFor      string `json:"explainerFor,omitempty" protobuf:"string,6,opt,name=explainerFor"`
 }
 
 type ServiceStatus struct {
 	SvcName      string `json:"svcName,omitempty" protobuf:"string,1,opt,name=svcName"`
 	HttpEndpoint string `json:"httpEndpoint,omitempty" protobuf:"string,2,opt,name=httpEndpoint"`
 	GrpcEndpoint string `json:"grpcEndpoint,omitempty" protobuf:"string,3,opt,name=grpcEndpoint"`
+	ExplainerFor string `json:"explainerFor,omitempty" protobuf:"string,4,opt,name=explainerFor"`
 }
 
 // SeldonDeploymentStatus defines the observed state of SeldonDeployment

@@ -611,8 +611,9 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 		//Create Service for Predictor
 
-		psvc, err := createPredictorService(pSvcName, seldonId, p, mlDep, engine_http_port, engine_grpc_port)
+		psvc, err := createPredictorService(pSvcName, seldonId, &p, mlDep, engine_http_port, engine_grpc_port)
 		if err != nil {
+
 			return nil, err
 		}
 
@@ -623,8 +624,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
 
-		// TODO: explainer needs to know svc name of predictor it is explainer for
-		err = createExplainer(r, mlDep, &p, psvc, &c)
+		err = createExplainer(r, mlDep, &p, &c)
 		if err != nil {
 			return nil, err
 		}
@@ -639,7 +639,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 	return &c, nil
 }
 
-func createPredictorService(pSvcName string, seldonId string, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {
+func createPredictorService(pSvcName string, seldonId string, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {
 	namespace := getNamespace(mlDep)
 
 	psvc := &corev1.Service{
@@ -650,20 +650,24 @@ func createPredictorService(pSvcName string, seldonId string, p machinelearningv
 				machinelearningv1alpha2.Label_seldon_id: seldonId},
 		},
 		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{
-				{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"},
-				{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"},
-			},
 			Selector:        map[string]string{machinelearningv1alpha2.Label_seldon_app: pSvcName},
 			SessionAffinity: corev1.ServiceAffinityNone,
 			Type:            corev1.ServiceTypeClusterIP,
 		},
 	}
 
+	if engine_http_port != 0 && len(psvc.Spec.Ports) == 0 {
+		psvc.Spec.Ports = append(psvc.Spec.Ports, corev1.ServicePort{Protocol: corev1.ProtocolTCP, Port: int32(engine_http_port), TargetPort: intstr.FromInt(engine_http_port), Name: "http"})
+	}
+
+	if engine_grpc_port != 0 && len(psvc.Spec.Ports) < 2 {
+		psvc.Spec.Ports = append(psvc.Spec.Ports, corev1.ServicePort{Protocol: corev1.ProtocolTCP, Port: int32(engine_grpc_port), TargetPort: intstr.FromInt(engine_grpc_port), Name: "grpc"})
+	}
+
 	if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
 		psvc.Annotations = make(map[string]string)
 		//Create top level Service
-		ambassadorConfig, err := getAmbassadorConfigs(mlDep, &p, pSvcName, engine_http_port, engine_grpc_port)
+		ambassadorConfig, err := getAmbassadorConfigs(mlDep, p, pSvcName, engine_http_port, engine_grpc_port)
 		if err != nil {
 			return nil, err
 		}
@@ -674,6 +678,7 @@ func createPredictorService(pSvcName string, seldonId string, p machinelearningv
 		log.Info("Creating Headless SVC")
 		psvc.Spec.ClusterIP = "None"
 	}
+
 	return psvc, err
 }
 
@@ -759,7 +764,7 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 	return deploy
 }
 
-func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, service *corev1.Service, c *components) error {
+func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components) error {
 
 	if p.Explainer.Type != "" {
 
@@ -768,7 +773,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 
 		// TODO: switch to alibi image
-		tfServingContainer := corev1.Container{
+		explainerContainer := corev1.Container{
 			Name:  depName,
 			Image: "tensorflow/serving:latest",
 			Args: []string{
@@ -791,18 +796,38 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		seldonPodSpec := machinelearningv1alpha2.SeldonPodSpec{Spec: corev1.PodSpec{
-			Containers: []corev1.Container{tfServingContainer},
+			Containers: []corev1.Container{explainerContainer},
 		}}
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		InjectModelInitializer(deploy, &tfServingContainer, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
-		// TODO: handle explainer parameters - rewrite value of tfServingContainer.Args
+		InjectModelInitializer(deploy, &explainerContainer, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
+		// TODO: handle explainer parameters - rewrite value of explainerContainer.Args
 		// add Service/VirtualService for explainer
 		//also if user sets ContainerSpec with image then use that
 		//if user specifies ContainerSpec without image then merge with what we have
 		c.deployments = append(c.deployments, deploy)
 
-		// TODO: create Service
+		// for explainer use same service name as its Deployment
+		eSvcName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
+		// and point at Deployment ports rather than engine ports - assume http comes first
+		httpPort := int(explainerContainer.Ports[0].ContainerPort)
+		grpcPort := 0
+		if len(explainerContainer.Ports) > 1 {
+			grpcPort = int(explainerContainer.Ports[1].ContainerPort)
+		}
+		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort)
+		if err != nil {
+			return err
+		}
+		c.services = append(c.services, eSvc)
+		c.serviceDetails[eSvcName] = &machinelearningv1alpha2.ServiceStatus{
+			SvcName:      eSvcName,
+			HttpEndpoint: eSvcName + "." + eSvc.Namespace + ":" + strconv.Itoa(httpPort),
+			ExplainerFor: machinelearningv1alpha2.GetPredictorKey(mlDep, p),
+		}
+		if grpcPort > 0 {
+			c.serviceDetails[eSvcName].GrpcEndpoint = eSvcName + "." + eSvc.Namespace + ":" + strconv.Itoa(grpcPort)
+		}
 
 	}
 
