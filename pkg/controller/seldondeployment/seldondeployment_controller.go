@@ -745,7 +745,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		// TODO: switch to alibi image
 		tfServingContainer := corev1.Container{
-			Name:  "tfserving",
+			Name:  mlDep.Name + "-explainer",
 			Image: "tensorflow/serving:latest",
 			Args: []string{
 				"/usr/bin/tensorflow_model_server",

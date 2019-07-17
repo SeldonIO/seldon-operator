@@ -25,22 +25,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-//TODO: change to seldon
+// TODO: change image to seldon
+// TODO: check PVC
 const (
 	DefaultModelLocalMountPath       = "/mnt/models"
-	ModelInitializerContainerName    = "model-initializer"
-	ModelInitializerVolumeName       = "kfserving-provision-location"
 	ModelInitializerContainerImage   = "gcr.io/kfserving/model-initializer"
 	ModelInitializerContainerVersion = "latest"
 	PvcURIPrefix                     = "pvc://"
 	PvcSourceMountName               = "kfserving-pvc-source"
 	PvcSourceMountPath               = "/mnt/pvc"
-	UserContainerName                = "user-container"
 )
 
 var (
-	ControllerNamespace     = getEnv("POD_NAMESPACE", "seldon-system")
-	ControllerConfigMapName = "seldon-config"
+	ControllerNamespace           = getEnv("POD_NAMESPACE", "seldon-system")
+	ControllerConfigMapName       = "seldon-config"
+	ModelInitializerVolumeName    = "provision-location"
+	ModelInitializerContainerName = "model-initializer"
 )
 
 func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.CredentialBuilder, err error) {
@@ -58,6 +58,13 @@ func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.C
 
 // InjectModelInitializer injects an init container to provision model data
 func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1.Container, srcURI string, serviceAccountName string, Client client.Client) error {
+
+	if !strings.HasPrefix(ModelInitializerVolumeName, userContainer.Name+"-") {
+		ModelInitializerVolumeName = userContainer.Name + "-" + ModelInitializerVolumeName
+	}
+	if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
+		ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
+	}
 
 	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
 	podSpec := &deployment.Spec.Template.Spec
