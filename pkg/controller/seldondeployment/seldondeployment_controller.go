@@ -761,6 +761,33 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 		deploy.Spec.Template.ObjectMeta.Labels[k] = v
 	}
 
+	for k := 0; k < len(deploy.Spec.Template.Spec.Containers); k++ {
+		con := &deploy.Spec.Template.Spec.Containers[k]
+		// Add some defaults for easier diffs later in controller
+		if con.TerminationMessagePath == "" {
+			con.TerminationMessagePath = "/dev/termination-log"
+		}
+		if con.TerminationMessagePolicy == "" {
+			con.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		}
+	}
+
+	//Add some default to help with diffs in controller
+	if deploy.Spec.Template.Spec.RestartPolicy == "" {
+		deploy.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyAlways
+	}
+	if deploy.Spec.Template.Spec.DNSPolicy == "" {
+		deploy.Spec.Template.Spec.DNSPolicy = corev1.DNSClusterFirst
+	}
+	if deploy.Spec.Template.Spec.SchedulerName == "" {
+		deploy.Spec.Template.Spec.SchedulerName = "default-scheduler"
+	}
+	if deploy.Spec.Template.Spec.SecurityContext == nil {
+		deploy.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{}
+	}
+	var terminationGracePeriod int64 = 20
+	deploy.Spec.Template.Spec.TerminationGracePeriodSeconds = &terminationGracePeriod
+
 	return deploy
 }
 

@@ -157,15 +157,18 @@ func InjectModelInitializer(deployment *appsv1.Deployment, srcURI string, servic
 		}
 		modelInitializerMounts = append(modelInitializerMounts, sharedVolumeWriteMount)
 
-		// Add an init container to run provisioning logic to the PodSpec
+		// Add an init container to run provisioning logic to the PodSpec (with defaults to pass comparison later)
 		initContainer := &corev1.Container{
-			Name:  ModelInitializerContainerName,
-			Image: ModelInitializerContainerImage + ":" + ModelInitializerContainerVersion,
+			Name:            ModelInitializerContainerName,
+			Image:           ModelInitializerContainerImage + ":" + ModelInitializerContainerVersion,
+			ImagePullPolicy: corev1.PullIfNotPresent,
 			Args: []string{
 				srcURI,
 				DefaultModelLocalMountPath,
 			},
-			VolumeMounts: modelInitializerMounts,
+			VolumeMounts:             modelInitializerMounts,
+			TerminationMessagePath:   "/dev/termination-log",
+			TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 		}
 
 		addVolumeMountToContainer(userContainer, ModelInitializerVolumeName)
