@@ -513,6 +513,119 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	return vscs, drules
 }
 
+// Create istio virtual service and destination rule for explainer.
+// Explainers need one each with no traffic-splitting
+func createExplainerIstioResources(pSvcName string, p *machinelearningv1alpha2.PredictorSpec,
+	mlDep *machinelearningv1alpha2.SeldonDeployment,
+	seldonId string,
+	namespace string,
+	engine_http_port int,
+	engine_grpc_port int) ([]*istio.VirtualService, []*istio.DestinationRule) {
+
+	istio_gateway := getEnv(ENV_ISTIO_GATEWAY, "seldon-gateway")
+	httpVsvc := &istio.VirtualService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId + "-http",
+			Namespace: namespace,
+		},
+		Spec: istio.VirtualServiceSpec{
+			Hosts:    []string{"*"},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, istio_gateway)},
+			HTTP: []istio.HTTPRoute{
+				{
+					Match: []istio.HTTPMatchRequest{
+						{
+							URI: &v1alpha1.StringMatch{Prefix: "/seldon/" + namespace + "/" + mlDep.Name + "/" + p.Name + "/explainer/"},
+						},
+					},
+					Rewrite: &istio.HTTPRewrite{URI: "/"},
+				},
+			},
+		},
+	}
+
+	grpcVsvc := &istio.VirtualService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      seldonId + "-grpc",
+			Namespace: namespace,
+		},
+		Spec: istio.VirtualServiceSpec{
+			Hosts:    []string{"*"},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
+			HTTP: []istio.HTTPRoute{
+				{
+					Match: []istio.HTTPMatchRequest{
+						{
+							URI: &v1alpha1.StringMatch{Prefix: "/seldon.protos.Seldon/"},
+							Headers: map[string]v1alpha1.StringMatch{
+								"seldon":    v1alpha1.StringMatch{Exact: mlDep.Name}, //TODO: change this?
+								"namespace": v1alpha1.StringMatch{Exact: namespace},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	routesHttp := make([]istio.HTTPRouteDestination, 1)
+	routesGrpc := make([]istio.HTTPRouteDestination, 1)
+	drules := make([]*istio.DestinationRule, 1)
+
+	drule := &istio.DestinationRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pSvcName,
+			Namespace: namespace,
+		},
+		Spec: istio.DestinationRuleSpec{
+			Host: pSvcName,
+			Subsets: []istio.Subset{
+				{
+					Name: p.Name,
+					Labels: map[string]string{
+						"version": p.Labels["version"],
+					},
+				},
+			},
+		},
+	}
+
+	routesHttp[0] = istio.HTTPRouteDestination{
+		Destination: istio.Destination{
+			Host:   pSvcName,
+			Subset: p.Name,
+			Port: istio.PortSelector{
+				Number: uint32(engine_http_port),
+			},
+		},
+		Weight: int(100),
+	}
+	routesGrpc[0] = istio.HTTPRouteDestination{
+		Destination: istio.Destination{
+			Host:   pSvcName,
+			Subset: p.Name,
+			Port: istio.PortSelector{
+				Number: uint32(engine_grpc_port),
+			},
+		},
+		Weight: int(100),
+	}
+	drules[0] = drule
+
+	httpVsvc.Spec.HTTP[0].Route = routesHttp
+	grpcVsvc.Spec.HTTP[0].Route = routesGrpc
+	vscs := make([]*istio.VirtualService, 0, 2)
+	// explainer may not expose REST and grpc (presumably engine ensures predictors do?)
+	if engine_http_port > 0 {
+		vscs = append(vscs, httpVsvc)
+	}
+	if engine_grpc_port > 0 {
+		vscs = append(vscs, grpcVsvc)
+	}
+
+	return vscs, drules
+}
+
 // Create all the components (Deployments, Services etc)
 func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
 	c := components{}
@@ -633,8 +746,8 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 	//TODO Fixme - not changed to handle per predictor scenario
 	if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
 		vsvcs, dstRule := createIstioResources(mlDep, seldonId, namespace, engine_http_port, engine_grpc_port)
-		c.virtualServices = vsvcs
-		c.destinationRules = dstRule
+		c.virtualServices = append(c.virtualServices, vsvcs...)
+		c.destinationRules = append(c.destinationRules, dstRule...)
 	}
 	return &c, nil
 }
@@ -910,7 +1023,11 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		if grpcPort > 0 {
 			c.serviceDetails[eSvcName].GrpcEndpoint = eSvcName + "." + eSvc.Namespace + ":" + strconv.Itoa(grpcPort)
 		}
-
+		if getEnv(ENV_ISTIO_ENABLED, "false") == "true" {
+			vsvcs, dstRule := createExplainerIstioResources(eSvcName, p, mlDep, seldonId, getNamespace(mlDep), httpPort, grpcPort)
+			c.virtualServices = append(c.virtualServices, vsvcs...)
+			c.destinationRules = append(c.destinationRules, dstRule...)
+		}
 	}
 
 	return nil
