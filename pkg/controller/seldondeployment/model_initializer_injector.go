@@ -15,14 +15,15 @@ package seldondeployment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
-
+	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	"github.com/seldonio/seldon-operator/pkg/controller/resources/credentials"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
 )
 
 // TODO: change image to seldon
@@ -57,120 +58,166 @@ func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.C
 }
 
 // InjectModelInitializer injects an init container to provision model data
-func InjectModelInitializer(deployment *appsv1.Deployment, userContainer *corev1.Container, srcURI string, serviceAccountName string, Client client.Client) error {
+func InjectModelInitializer(deployment *appsv1.Deployment, srcURI string, serviceAccountName string, Client client.Client) (deploy *appsv1.Deployment, err error) {
 
-	if !strings.HasPrefix(ModelInitializerVolumeName, userContainer.Name+"-") {
-		ModelInitializerVolumeName = userContainer.Name + "-" + ModelInitializerVolumeName
-	}
-	if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
-		ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
-	}
+	//TODO: need to iterate the containers and find the uris from the  env vars?
+	//is this really necessary?
+	var userContainer *corev1.Container
+	for idx, _ := range deployment.Spec.Template.Spec.Containers {
+		userContainer = &deployment.Spec.Template.Spec.Containers[idx]
 
-	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
-	podSpec := &deployment.Spec.Template.Spec
+		for _, envVar := range userContainer.Env {
+			if envVar.Name == machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS {
+				var puParams []machinelearningv1alpha2.Parameter
+				json.Unmarshal([]byte(envVar.Value), &puParams)
+				fmt.Printf("PU Params  " + envVar.Value)
+				fmt.Println("puParams")
+				fmt.Printf("%+v\n", puParams)
+				var puParam *machinelearningv1alpha2.Parameter
+				for pidx, _ := range puParams {
+					puParam = &puParams[pidx]
+					fmt.Printf("puParam")
+					fmt.Printf("%+v\n", puParam)
+					fmt.Println("puParam.Value")
+					fmt.Println(puParam.Value)
+				}
 
-	// Dont inject if InitContianer already injected
-	for _, container := range podSpec.InitContainers {
-		if strings.Compare(container.Name, ModelInitializerContainerName) == 0 {
-			return nil
-		}
-	}
-
-	podVolumes := []corev1.Volume{}
-	modelInitializerMounts := []corev1.VolumeMount{}
-
-	// For PVC source URIs we need to mount the source to be able to access it
-	// See design and discussion here: https://github.com/kubeflow/kfserving/issues/148
-	if strings.HasPrefix(srcURI, PvcURIPrefix) {
-		pvcName, pvcPath, err := parsePvcURI(srcURI)
-		if err != nil {
-			return err
+				//TODO: should check that there is a value or skip to next iteration!
+			}
 		}
 
-		// add the PVC volume on the pod
-		pvcSourceVolume := corev1.Volume{
-			Name: PvcSourceMountName,
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: pvcName,
+		if !strings.HasPrefix(ModelInitializerVolumeName, userContainer.Name+"-") {
+			ModelInitializerVolumeName = userContainer.Name + "-" + ModelInitializerVolumeName
+		}
+		if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
+			ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
+		}
+
+		// TODO: KFServing does a check for an annotation before injecting - not doing that for now
+		podSpec := &deployment.Spec.Template.Spec
+
+		// Dont inject if InitContianer already injected
+		for _, container := range podSpec.InitContainers {
+			if strings.Compare(container.Name, ModelInitializerContainerName) == 0 {
+				// make sure we have the mount on the main container
+				addVolumeMountToContainer(userContainer, ModelInitializerVolumeName)
+				return deployment, nil
+			}
+		}
+
+		podVolumes := []corev1.Volume{}
+		modelInitializerMounts := []corev1.VolumeMount{}
+
+		// For PVC source URIs we need to mount the source to be able to access it
+		// See design and discussion here: https://github.com/kubeflow/kfserving/issues/148
+		if strings.HasPrefix(srcURI, PvcURIPrefix) {
+			pvcName, pvcPath, err := parsePvcURI(srcURI)
+			if err != nil {
+				return nil, err
+			}
+
+			// add the PVC volume on the pod
+			pvcSourceVolume := corev1.Volume{
+				Name: PvcSourceMountName,
+				VolumeSource: corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: pvcName,
+					},
 				},
+			}
+			podVolumes = append(podVolumes, pvcSourceVolume)
+
+			// add a corresponding PVC volume mount to the INIT container
+			pvcSourceVolumeMount := corev1.VolumeMount{
+				Name:      PvcSourceMountName,
+				MountPath: PvcSourceMountPath,
+				ReadOnly:  true,
+			}
+			modelInitializerMounts = append(modelInitializerMounts, pvcSourceVolumeMount)
+
+			// modify the sourceURI to point to the PVC path
+			srcURI = PvcSourceMountPath + "/" + pvcPath
+		}
+
+		// Create a volume that is shared between the model-initializer and user-container
+		sharedVolume := corev1.Volume{
+			Name: ModelInitializerVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		}
-		podVolumes = append(podVolumes, pvcSourceVolume)
+		podVolumes = append(podVolumes, sharedVolume)
 
-		// add a corresponding PVC volume mount to the INIT container
-		pvcSourceVolumeMount := corev1.VolumeMount{
-			Name:      PvcSourceMountName,
-			MountPath: PvcSourceMountPath,
+		// Create a write mount into the shared volume
+		sharedVolumeWriteMount := corev1.VolumeMount{
+			Name:      ModelInitializerVolumeName,
+			MountPath: DefaultModelLocalMountPath,
+			ReadOnly:  false,
+		}
+		modelInitializerMounts = append(modelInitializerMounts, sharedVolumeWriteMount)
+
+		// Add an init container to run provisioning logic to the PodSpec
+		initContainer := &corev1.Container{
+			Name:  ModelInitializerContainerName,
+			Image: ModelInitializerContainerImage + ":" + ModelInitializerContainerVersion,
+			Args: []string{
+				srcURI,
+				DefaultModelLocalMountPath,
+			},
+			VolumeMounts: modelInitializerMounts,
+		}
+
+		addVolumeMountToContainer(userContainer, ModelInitializerVolumeName)
+		// Add volumes to the PodSpec
+		podSpec.Volumes = append(podSpec.Volumes, podVolumes...)
+
+		// Inject credentials
+		credentialsBuilder, err := credentialsBuilder(Client)
+		if err != nil {
+			return nil, err
+		}
+		if serviceAccountName == "" {
+			serviceAccountName = podSpec.ServiceAccountName
+		}
+
+		if err := credentialsBuilder.CreateSecretVolumeAndEnv(
+			deployment.Namespace,
+			serviceAccountName,
+			initContainer,
+			&podSpec.Volumes,
+		); err != nil {
+			return nil, err
+		}
+
+		// Add init container to the spec
+		podSpec.InitContainers = append(podSpec.InitContainers, *initContainer)
+		fmt.Printf("Explainer container at end of initializer")
+		jStr1, err := json.Marshal(userContainer)
+		fmt.Println(string(jStr1))
+	}
+	fmt.Printf("Deployment at end of initializer")
+	jStr2, err := json.Marshal(deployment)
+	fmt.Println(string(jStr2))
+	return deployment, nil
+}
+
+func addVolumeMountToContainer(userContainer *corev1.Container, ModelInitializerVolumeName string) {
+	mountFound := false
+	for _, v := range userContainer.VolumeMounts {
+		if v.Name == ModelInitializerVolumeName {
+			mountFound = true
+		}
+	}
+	if !mountFound {
+		// Add a mount the shared volume on the user-container, update the PodSpec
+		sharedVolumeReadMount := &corev1.VolumeMount{
+			Name:      ModelInitializerVolumeName,
+			MountPath: DefaultModelLocalMountPath,
 			ReadOnly:  true,
 		}
-		modelInitializerMounts = append(modelInitializerMounts, pvcSourceVolumeMount)
-
-		// modify the sourceURI to point to the PVC path
-		srcURI = PvcSourceMountPath + "/" + pvcPath
+		fmt.Printf("adding mount " + DefaultModelLocalMountPath + " to " + userContainer.Name)
+		userContainer.VolumeMounts = append(userContainer.VolumeMounts, *sharedVolumeReadMount)
 	}
-
-	// Create a volume that is shared between the model-initializer and user-container
-	sharedVolume := corev1.Volume{
-		Name: ModelInitializerVolumeName,
-		VolumeSource: corev1.VolumeSource{
-			EmptyDir: &corev1.EmptyDirVolumeSource{},
-		},
-	}
-	podVolumes = append(podVolumes, sharedVolume)
-
-	// Create a write mount into the shared volume
-	sharedVolumeWriteMount := corev1.VolumeMount{
-		Name:      ModelInitializerVolumeName,
-		MountPath: DefaultModelLocalMountPath,
-		ReadOnly:  false,
-	}
-	modelInitializerMounts = append(modelInitializerMounts, sharedVolumeWriteMount)
-
-	// Add an init container to run provisioning logic to the PodSpec
-	initContainer := &corev1.Container{
-		Name:  ModelInitializerContainerName,
-		Image: ModelInitializerContainerImage + ":" + ModelInitializerContainerVersion,
-		Args: []string{
-			srcURI,
-			DefaultModelLocalMountPath,
-		},
-		VolumeMounts: modelInitializerMounts,
-	}
-
-	// Add a mount the shared volume on the user-container, update the PodSpec
-	sharedVolumeReadMount := corev1.VolumeMount{
-		Name:      ModelInitializerVolumeName,
-		MountPath: DefaultModelLocalMountPath,
-		ReadOnly:  true,
-	}
-	userContainer.VolumeMounts = append(userContainer.VolumeMounts, sharedVolumeReadMount)
-
-	// Add volumes to the PodSpec
-	podSpec.Volumes = append(podSpec.Volumes, podVolumes...)
-
-	// Inject credentials
-	credentialsBuilder, err := credentialsBuilder(Client)
-	if err != nil {
-		return err
-	}
-	if serviceAccountName == "" {
-		serviceAccountName = podSpec.ServiceAccountName
-	}
-
-	if err := credentialsBuilder.CreateSecretVolumeAndEnv(
-		deployment.Namespace,
-		serviceAccountName,
-		initContainer,
-		&podSpec.Volumes,
-	); err != nil {
-		return err
-	}
-
-	// Add init container to the spec
-	podSpec.InitContainers = append(podSpec.InitContainers, *initContainer)
-
-	return nil
 }
 
 func parsePvcURI(srcURI string) (pvcName string, pvcPath string, err error) {
