@@ -965,7 +965,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		uriParam := machinelearningv1alpha2.Parameter{
 			Name:  "model_uri",
 			Type:  "STRING",
-			Value: p.Explainer.ModelUri,
+			Value: "/mnt/pvc",
 		}
 		params = append(params, uriParam)
 		paramStr, err := json.Marshal(params)
