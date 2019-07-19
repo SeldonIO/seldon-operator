@@ -786,17 +786,12 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		var DefaultSKLearnServerImageNameRest = "seldonio/sklearnserver_rest:0.1"
 		var DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
 
-		// TODO: port shouldn't be hardcoded
-		// how should we set port for explainer?
-		var portNum int32 = 9000
-		existingPort := getPort(portType, explainerContainer.Ports)
-		if existingPort == nil {
-			explainerContainer.Ports = append(explainerContainer.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
-		} else {
-			portNum = existingPort.ContainerPort
-		}
+		// explainer will follow PU for http/grpc
 		var httpPort = 0
 		var grpcPort = 0
+		var portNum int32 = 9000
+		existingPort := getPort(portType, explainerContainer.Ports)
+
 		if p.Graph.Endpoint.Type == machinelearningv1alpha2.REST {
 			explainerContainer.Image = DefaultSKLearnServerImageNameRest
 			portType = "http"
@@ -805,6 +800,12 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			explainerContainer.Image = DefaultSKLearnServerImageNameGrpc
 			portType = "grpc"
 			grpcPort = int(portNum)
+		}
+
+		if existingPort == nil {
+			explainerContainer.Ports = append(explainerContainer.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
+		} else {
+			portNum = existingPort.ContainerPort
 		}
 
 		if explainerContainer.LivenessProbe == nil {
