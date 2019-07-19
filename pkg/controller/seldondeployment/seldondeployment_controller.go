@@ -961,6 +961,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		var params []machinelearningv1alpha2.Parameter
+		// TODO: params should be to mount path
 		uriParam := machinelearningv1alpha2.Parameter{
 			Name:  "model_uri",
 			Type:  "STRING",
@@ -987,7 +988,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}}
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		deploy, err = InjectModelInitializer(deploy, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
+		deploy, err = InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
 		if err != nil {
 			return err
 		}
