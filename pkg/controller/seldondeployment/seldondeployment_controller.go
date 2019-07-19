@@ -961,11 +961,11 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		var params []machinelearningv1alpha2.Parameter
-		// TODO: params should be to mount path
+
 		uriParam := machinelearningv1alpha2.Parameter{
 			Name:  "model_uri",
 			Type:  "STRING",
-			Value: "/mnt/pvc",
+			Value: "/mnt/models",
 		}
 		params = append(params, uriParam)
 		paramStr, err := json.Marshal(params)
