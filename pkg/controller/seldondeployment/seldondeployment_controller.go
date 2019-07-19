@@ -440,7 +440,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		},
 		Spec: istio.VirtualServiceSpec{
 			Hosts:    []string{"*"},
-			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, istio_gateway)},
 			HTTP: []istio.HTTPRoute{
 				{
 					Match: []istio.HTTPMatchRequest{
