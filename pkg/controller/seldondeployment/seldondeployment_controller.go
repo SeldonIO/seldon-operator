@@ -819,13 +819,26 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			explainerContainer.Lifecycle = &corev1.Lifecycle{PreStop: &corev1.Handler{Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 10"}}}}
 		}
 
+		var params []machinelearningv1alpha2.Parameter
+		uriParam := machinelearningv1alpha2.Parameter{
+			Name:  "model_uri",
+			Type:  "STRING",
+			Value: p.Explainer.ModelUri,
+		}
+		params = append(params, uriParam)
+		paramStr, err := json.Marshal(params)
+		if err != nil {
+			return err
+		}
+		puParamsEnvVar := corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: string(paramStr)}
+
 		// Add Environment Variables - TODO: are these needed
 		explainerContainer.Env = append(explainerContainer.Env, []corev1.EnvVar{
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_SERVICE_PORT, Value: strconv.Itoa(int(portNum))},
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_ID, Value: explainerContainer.Name},
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTOR_ID, Value: p.Name},
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_SELDON_DEPLOYMENT_ID, Value: mlDep.ObjectMeta.Name},
-			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: `'[{"name":"model_uri","value":"gs://kfserving-samples/models/sklearn/iris","type":"STRING"}]'`},
+			puParamsEnvVar,
 		}...)
 
 		seldonPodSpec := machinelearningv1alpha2.SeldonPodSpec{Spec: corev1.PodSpec{
@@ -833,7 +846,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}}
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		deploy, err := InjectModelInitializer(deploy, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
+		deploy, err = InjectModelInitializer(deploy, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
 		if err != nil {
 			return err
 		}

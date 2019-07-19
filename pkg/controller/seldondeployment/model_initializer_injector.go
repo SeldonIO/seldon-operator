@@ -62,6 +62,7 @@ func InjectModelInitializer(deployment *appsv1.Deployment, srcURI string, servic
 
 	//TODO: need to iterate the containers and find the uris from the  env vars?
 	//is this really necessary?
+	//change this to match on a container name and just do that container-URI pair!
 	var userContainer *corev1.Container
 	for idx, _ := range deployment.Spec.Template.Spec.Containers {
 		userContainer = &deployment.Spec.Template.Spec.Containers[idx]
