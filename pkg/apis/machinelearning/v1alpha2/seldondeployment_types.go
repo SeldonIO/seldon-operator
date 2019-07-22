@@ -180,7 +180,7 @@ type PredictorSpec struct {
 	Labels          map[string]string       `json:"labels,omitempty" protobuf:"bytes,7,opt,name=labels"`
 	SvcOrchSpec     SvcOrchSpec             `json:"svcOrchSpec,omitempty" protobuf:"bytes,8,opt,name=svcOrchSpec"`
 	Traffic         int32                   `json:"traffic,omitempty" protobuf:"bytes,9,opt,name=traffic"`
-	Explainer       Explainer               `json:"explainer,omitempty" protobuf:"bytes,8,opt,name=explainer"`
+	Explainer       Explainer               `json:"explainer,omitempty" protobuf:"bytes,10,opt,name=explainer"`
 }
 
 type SvcOrchSpec struct {
