@@ -963,8 +963,8 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		explainerContainer.Args = []string{
 			"--explainerUri=/mnt/models",
-			"--explainer_name=" + p.Name,
-			"--predict_url=" + pSvcEndpoint,
+			"--explainer_name=" + mlDep.Name,
+			"--predict_url=" + "http://" + pSvcEndpoint + "/api/v0.1/predictions",
 			"--protocol=" + "seldon." + portType,
 			"--type=" + strings.ToLower(p.Explainer.Type),
 			"--http_port=" + strconv.Itoa(int(portNum))}
