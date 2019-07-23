@@ -737,7 +737,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			GrpcEndpoint: pSvcName + "." + namespace + ":" + strconv.Itoa(engine_grpc_port),
 		}
 
-		err = createExplainer(r, mlDep, &p, &c)
+		err = createExplainer(r, mlDep, &p, &c, pSvcName)
 		if err != nil {
 			return nil, err
 		}
@@ -904,7 +904,7 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 	return deploy
 }
 
-func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components) error {
+func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pSvcName string) error {
 
 	if p.Explainer.Type != "" {
 
@@ -912,6 +912,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 
+		//TODO: should check for user-supplied p.Explainer.ContainerSpec
 		explainerContainer := corev1.Container{
 			Name:            depName,
 			ImagePullPolicy: corev1.PullIfNotPresent,
@@ -921,25 +922,25 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			p.Graph.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
 		}
 
-		// TODO: switch to alibi image
+		// TODO: should use explainer type?
 		var portType string
-		var DefaultSKLearnServerImageNameRest = "seldonio/sklearnserver_rest:0.1"
-		var DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
+		explainerContainer.Image = "seldonio/alibiexplainer:0.1"
 
 		// explainer will follow PU for http/grpc
 		var httpPort = 0
 		var grpcPort = 0
 		var portNum int32 = 9000
+		var pSvcEndpoint = ""
 		existingPort := getPort(portType, explainerContainer.Ports)
 
 		if p.Graph.Endpoint.Type == machinelearningv1alpha2.REST {
-			explainerContainer.Image = DefaultSKLearnServerImageNameRest
 			portType = "http"
 			httpPort = int(portNum)
+			pSvcEndpoint = c.serviceDetails[pSvcName].HttpEndpoint
 		} else {
-			explainerContainer.Image = DefaultSKLearnServerImageNameGrpc
 			portType = "grpc"
 			grpcPort = int(portNum)
+			pSvcEndpoint = c.serviceDetails[pSvcName].GrpcEndpoint
 		}
 
 		if existingPort == nil {
@@ -949,10 +950,10 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		if explainerContainer.LivenessProbe == nil {
-			explainerContainer.LivenessProbe = &corev1.Probe{Handler: corev1.Handler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 60, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1}
+			explainerContainer.LivenessProbe = &corev1.Probe{Handler: corev1.Handler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 60, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 5, TimeoutSeconds: 1}
 		}
 		if explainerContainer.ReadinessProbe == nil {
-			explainerContainer.ReadinessProbe = &corev1.Probe{Handler: corev1.Handler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 20, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1}
+			explainerContainer.ReadinessProbe = &corev1.Probe{Handler: corev1.Handler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 20, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 7, TimeoutSeconds: 1}
 		}
 
 		// Add livecycle probe
@@ -960,19 +961,14 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			explainerContainer.Lifecycle = &corev1.Lifecycle{PreStop: &corev1.Handler{Exec: &corev1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 10"}}}}
 		}
 
-		var params []machinelearningv1alpha2.Parameter
-
-		uriParam := machinelearningv1alpha2.Parameter{
-			Name:  "model_uri",
-			Type:  "STRING",
-			Value: "/mnt/models",
-		}
-		params = append(params, uriParam)
-		paramStr, err := json.Marshal(params)
-		if err != nil {
-			return err
-		}
-		puParamsEnvVar := corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: string(paramStr)}
+		explainerContainer.Args = []string{
+			"--explainerUri=/mnt/models",
+			"--explainer_name=" + p.Name,
+			"--predict_url=" + pSvcEndpoint,
+			"--protocol=" + "seldon." + portType,
+			"--type=" + strings.ToLower(p.Explainer.Type),
+			"--http_port=" + strconv.Itoa(int(portNum))}
+		// see https://github.com/cliveseldon/kfserving/tree/explainer_update_jul/docs/samples/explanation/income for more
 
 		// Add Environment Variables - TODO: are these needed
 		explainerContainer.Env = append(explainerContainer.Env, []corev1.EnvVar{
@@ -980,7 +976,6 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_ID, Value: explainerContainer.Name},
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTOR_ID, Value: p.Name},
 			corev1.EnvVar{Name: machinelearningv1alpha2.ENV_SELDON_DEPLOYMENT_ID, Value: mlDep.ObjectMeta.Name},
-			puParamsEnvVar,
 		}...)
 
 		seldonPodSpec := machinelearningv1alpha2.SeldonPodSpec{Spec: corev1.PodSpec{
@@ -988,7 +983,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}}
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		deploy, err = InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
+		deploy, err := InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
 		if err != nil {
 			return err
 		}
