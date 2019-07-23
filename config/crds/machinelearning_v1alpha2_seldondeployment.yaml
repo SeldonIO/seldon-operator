@@ -59,6 +59,17 @@ spec:
                     type: array
                   engineResources:
                     type: object
+                  explainer:
+                    properties:
+                      containerSpec:
+                        type: object
+                      modelUri:
+                        type: string
+                      serviceAccountName:
+                        type: string
+                      type:
+                        type: string
+                    type: object
                   graph:
                     properties:
                       children:
@@ -91,6 +102,8 @@ spec:
                               type: string
                           type: object
                         type: array
+                      serviceAccountName:
+                        type: string
                       type:
                         type: string
                     type: object

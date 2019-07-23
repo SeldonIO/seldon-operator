@@ -60,7 +60,7 @@ func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 		}
 
 	} else if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
-		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER  ||
+		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER ||
 		*pu.Implementation == machinelearningv1alpha2.TENSORFLOW_SERVER {
 		if pu.ModelURI == "" {
 			return false, "Predictive unit " + pu.Name + " modelUri required when using standalone servers"

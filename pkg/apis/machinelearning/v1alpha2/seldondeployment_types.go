@@ -80,6 +80,15 @@ func GetSeldonDeploymentName(mlDep *SeldonDeployment) string {
 	}
 }
 
+func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) string {
+	name := sdepName + "-" + predictorSpec.Name + "-explainer"
+	if len(name) > 63 {
+		return "seldon-" + hash(name)
+	} else {
+		return name
+	}
+}
+
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
 	if len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
@@ -171,11 +180,19 @@ type PredictorSpec struct {
 	Labels          map[string]string       `json:"labels,omitempty" protobuf:"bytes,7,opt,name=labels"`
 	SvcOrchSpec     SvcOrchSpec             `json:"svcOrchSpec,omitempty" protobuf:"bytes,8,opt,name=svcOrchSpec"`
 	Traffic         int32                   `json:"traffic,omitempty" protobuf:"bytes,9,opt,name=traffic"`
+	Explainer       Explainer               `json:"explainer,omitempty" protobuf:"bytes,10,opt,name=explainer"`
 }
 
 type SvcOrchSpec struct {
 	Resources *v1.ResourceRequirements `json:"resources,omitempty" protobuf:"bytes,1,opt,name=resources"`
 	Env       []*v1.EnvVar             `json:"env,omitempty" protobuf:"bytes,2,opt,name=env"`
+}
+
+type Explainer struct {
+	Type               string       `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
+	ModelUri           string       `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
+	ServiceAccountName string       `json:"serviceAccountName,omitempty" protobuf:"string,3,opt,name=serviceAccountName"`
+	ContainerSpec      v1.Container `json:"containerSpec,omitempty" protobuf:"bytes,4,opt,name=containerSpec"`
 }
 
 type SeldonPodSpec struct {
@@ -254,14 +271,15 @@ type Parameter struct {
 }
 
 type PredictiveUnit struct {
-	Name           string                        `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
-	Children       []PredictiveUnit              `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
-	Type           *PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
-	Implementation *PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
-	Methods        *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
-	Endpoint       *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
-	Parameters     []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
-	ModelURI       string                        `json:"modelUri,omitempty" protobuf:"bytes,8,opt,name=modelUri"`
+	Name               string                        `json:"name,omitempty" protobuf:"string,1,opt,name=name"`
+	Children           []PredictiveUnit              `json:"children,omitempty" protobuf:"bytes,2,opt,name=children"`
+	Type               *PredictiveUnitType           `json:"type,omitempty" protobuf:"int,3,opt,name=type"`
+	Implementation     *PredictiveUnitImplementation `json:"implementation,omitempty" protobuf:"int,4,opt,name=implementation"`
+	Methods            *[]PredictiveUnitMethod       `json:"methods,omitempty" protobuf:"int,5,opt,name=methods"`
+	Endpoint           *Endpoint                     `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
+	Parameters         []Parameter                   `json:"parameters,omitempty" protobuf:"bytes,7,opt,name=parameters"`
+	ModelURI           string                        `json:"modelUri,omitempty" protobuf:"bytes,8,opt,name=modelUri"`
+	ServiceAccountName string                        `json:"serviceAccountName,omitempty" protobuf:"bytes,9,opt,name=serviceAccountName"`
 }
 
 type DeploymentStatus struct {
@@ -270,12 +288,14 @@ type DeploymentStatus struct {
 	Description       string `json:"description,omitempty" protobuf:"string,3,opt,name=description"`
 	Replicas          int32  `json:"replicas,omitempty" protobuf:"string,4,opt,name=replicas"`
 	AvailableReplicas int32  `json:"availableReplicas,omitempty" protobuf:"string,5,opt,name=availableRelicas"`
+	ExplainerFor      string `json:"explainerFor,omitempty" protobuf:"string,6,opt,name=explainerFor"`
 }
 
 type ServiceStatus struct {
 	SvcName      string `json:"svcName,omitempty" protobuf:"string,1,opt,name=svcName"`
 	HttpEndpoint string `json:"httpEndpoint,omitempty" protobuf:"string,2,opt,name=httpEndpoint"`
 	GrpcEndpoint string `json:"grpcEndpoint,omitempty" protobuf:"string,3,opt,name=grpcEndpoint"`
+	ExplainerFor string `json:"explainerFor,omitempty" protobuf:"string,4,opt,name=explainerFor"`
 }
 
 // SeldonDeploymentStatus defines the observed state of SeldonDeployment

@@ -1,6 +1,6 @@
 LOCAL_PRIVATE_REPO=127.0.0.1:5000
 VERSION=0.3.2-SNAPSHOT
-
+GO111MODULE=off
 # Image URL to use all building/pushing image targets
 IMG ?= seldonio/seldon-core-operator:${VERSION}
 
@@ -54,7 +54,7 @@ endif
 	go generate ./pkg/... ./cmd/...
 
 # Build the docker image
-docker-build: 
+docker-build:
 	docker build . -t ${IMG}
 	@echo "updating kustomize image patch file for manager resource"
 	sed -i'' -e 's@image: .*@image: '"${IMG}"'@' ./config/default/manager_image_patch.yaml
