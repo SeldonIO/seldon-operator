@@ -76,9 +76,16 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 
 	if !strings.HasPrefix(ModelInitializerVolumeName, userContainer.Name+"-") {
 		ModelInitializerVolumeName = userContainer.Name + "-" + ModelInitializerVolumeName
+		//kubernetes names limited to 63
+		if len(ModelInitializerVolumeName) > 63 {
+			ModelInitializerVolumeName = ModelInitializerVolumeName[0:63]
+		}
 	}
 	if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
 		ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
+		if len(ModelInitializerContainerName) > 63 {
+			ModelInitializerContainerName = ModelInitializerContainerName[0:63]
+		}
 	}
 
 	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
