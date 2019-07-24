@@ -440,7 +440,7 @@ func createIstioResources(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		},
 		Spec: istio.VirtualServiceSpec{
 			Hosts:    []string{"*"},
-			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, istio_gateway)},
+			Gateways: []string{getAnnotation(mlDep, ANNOTATION_ISTIO_GATEWAY, "seldon-gateway")},
 			HTTP: []istio.HTTPRoute{
 				{
 					Match: []istio.HTTPMatchRequest{
@@ -987,24 +987,16 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		if err != nil {
 			return err
 		}
-		// TODO: handle explainer parameters - rewrite value of explainerContainer.Args
-		// add Service/VirtualService for explainer
-		//also if user sets ContainerSpec with image then use that
+		// TODO: if user sets ContainerSpec with image then use that
 		//if user specifies ContainerSpec without image then merge with what we have
-		c.deployments = append(c.deployments, deploy)
-
-		// TODO: remove these debugging comments!
-		//		fmt.Printf("Explainer Container about to be added")
-		//		fmt.Printf("%+v\n", explainerContainer)
-		//fmt.Printf("Explainer Container about to be added as json")
-		//jStr1, err := json.Marshal(explainerContainer)
-		//fmt.Println(string(jStr1))
-		//fmt.Printf("Belonging to Deployment")
-		//jStr1, err = json.Marshal(deploy)
-		//fmt.Println(string(jStr1))
 
 		// for explainer use same service name as its Deployment
 		eSvcName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
+
+		deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = eSvcName
+		deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = eSvcName
+
+		c.deployments = append(c.deployments, deploy)
 
 		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort)
 		if err != nil {
