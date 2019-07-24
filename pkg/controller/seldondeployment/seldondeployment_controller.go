@@ -933,6 +933,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		var pSvcEndpoint = ""
 		existingPort := getPort(portType, explainerContainer.Ports)
 
+		// TODO: would be better to get from map like https://github.com/kubeflow/kfserving/pull/237/files#diff-61a4574142a2c6abcbff2ae3a286c52aR68
 		if p.Graph.Endpoint.Type == machinelearningv1alpha2.REST {
 			portType = "http"
 			httpPort = int(portNum)
@@ -942,6 +943,9 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			grpcPort = int(portNum)
 			pSvcEndpoint = c.serviceDetails[pSvcName].GrpcEndpoint
 		}
+
+		// FIXME: http the only option that works right Now
+		portType = "http"
 
 		if existingPort == nil {
 			explainerContainer.Ports = append(explainerContainer.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
