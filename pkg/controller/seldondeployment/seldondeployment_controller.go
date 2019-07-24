@@ -946,6 +946,9 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		// FIXME: http the only option that works right Now
 		portType = "http"
+		httpPort = int(portNum)
+		pSvcEndpoint = c.serviceDetails[pSvcName].HttpEndpoint
+		grpcPort = 0
 
 		if existingPort == nil {
 			explainerContainer.Ports = append(explainerContainer.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
