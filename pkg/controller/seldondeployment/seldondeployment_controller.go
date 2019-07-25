@@ -253,7 +253,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(engine_http_port)},
 			{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(engine_grpc_port)},
 			{Name: "JAVA_OPTS", Value: javaOpts},
-			{Name: "SELDON_MESSAGE_LOGGING_SERVICE", Value: getEnv("ENGINE_LOG_MESSAGES_EXTERNALLY", "false")},
+			{Name: "SELDON_LOG_MESSAGES_EXTERNALLY", Value: getEnv("ENGINE_LOG_MESSAGES_EXTERNALLY", "false")},
 		},
 		Ports: []corev1.ContainerPort{
 			{ContainerPort: int32(engine_http_port), Protocol: corev1.ProtocolTCP},
