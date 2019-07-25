@@ -913,7 +913,6 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 
-		//TODO: should check for user-supplied p.Explainer.ContainerSpec
 		explainerContainer := p.Explainer.ContainerSpec
 
 		if explainerContainer.Name == "" {
