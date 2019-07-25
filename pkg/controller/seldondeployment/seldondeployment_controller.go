@@ -253,6 +253,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(engine_http_port)},
 			{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(engine_grpc_port)},
 			{Name: "JAVA_OPTS", Value: javaOpts},
+			{Name: "LOG_MESSAGES_EXTERNALLY", Value: getEnv("ENGINE_LOG_MESSAGES_EXTERNALLY", "false")},
 		},
 		Ports: []corev1.ContainerPort{
 			{ContainerPort: int32(engine_http_port), Protocol: corev1.ProtocolTCP},
@@ -912,10 +913,14 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		depName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 
-		//TODO: should check for user-supplied p.Explainer.ContainerSpec
-		explainerContainer := corev1.Container{
-			Name:            depName,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+		explainerContainer := p.Explainer.ContainerSpec
+
+		if explainerContainer.Name == "" {
+			explainerContainer.Name = depName
+		}
+
+		if explainerContainer.ImagePullPolicy == "" {
+			explainerContainer.ImagePullPolicy = corev1.PullIfNotPresent
 		}
 
 		if p.Graph.Endpoint == nil {
