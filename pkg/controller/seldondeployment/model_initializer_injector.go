@@ -79,12 +79,14 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 		//kubernetes names limited to 63
 		if len(ModelInitializerVolumeName) > 63 {
 			ModelInitializerVolumeName = ModelInitializerVolumeName[0:63]
+			ModelInitializerVolumeName = strings.TrimSuffix(ModelInitializerVolumeName, "-")
 		}
 	}
 	if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
 		ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
 		if len(ModelInitializerContainerName) > 63 {
 			ModelInitializerContainerName = ModelInitializerContainerName[0:63]
+			ModelInitializerContainerName = strings.TrimSuffix(ModelInitializerContainerName, "-")
 		}
 	}
 
