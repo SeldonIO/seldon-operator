@@ -253,7 +253,6 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			{Name: "ENGINE_SERVER_PORT", Value: strconv.Itoa(engine_http_port)},
 			{Name: "ENGINE_SERVER_GRPC_PORT", Value: strconv.Itoa(engine_grpc_port)},
 			{Name: "JAVA_OPTS", Value: javaOpts},
-			{Name: "LOG_MESSAGES_EXTERNALLY", Value: getEnv("ENGINE_LOG_MESSAGES_EXTERNALLY", "false")},
 		},
 		Ports: []corev1.ContainerPort{
 			{ContainerPort: int32(engine_http_port), Protocol: corev1.ProtocolTCP},
@@ -302,10 +301,17 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 			//present so don't try to overwrite
 		} else {
 			c.Env = append(c.Env, envVar)
+			// now put in map so we know it's there
+			svcOrchEnvMap[envVar.Name] = envVar.Value
 		}
 
 	}
 
+	if _, ok := svcOrchEnvMap["SELDON_LOG_MESSAGES_EXTERNALLY"]; ok {
+		//this env var is set already so no need to set a default
+	} else {
+		c.Env = append(c.Env, corev1.EnvVar{Name: "SELDON_LOG_MESSAGES_EXTERNALLY", Value: getEnv("ENGINE_LOG_MESSAGES_EXTERNALLY", "false")})
+	}
 	return &c, nil
 }
 
