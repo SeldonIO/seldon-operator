@@ -529,10 +529,22 @@ func createExplainerIstioResources(pSvcName string, p *machinelearningv1alpha2.P
 	engine_http_port int,
 	engine_grpc_port int) ([]*istio.VirtualService, []*istio.DestinationRule) {
 
+	vsNameHttp := pSvcName + "-http"
+	if len(vsNameHttp) > 63 {
+		vsNameHttp = vsNameHttp[0:63]
+		vsNameHttp = strings.TrimSuffix(vsNameHttp, "-")
+	}
+
+	vsNameGrpc := pSvcName + "-grpc"
+	if len(vsNameGrpc) > 63 {
+		vsNameGrpc = vsNameGrpc[0:63]
+		vsNameGrpc = strings.TrimSuffix(vsNameGrpc, "-")
+	}
+
 	istio_gateway := getEnv(ENV_ISTIO_GATEWAY, "seldon-gateway")
 	httpVsvc := &istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId + "-http",
+			Name:      vsNameHttp,
 			Namespace: namespace,
 		},
 		Spec: istio.VirtualServiceSpec{
@@ -553,7 +565,7 @@ func createExplainerIstioResources(pSvcName string, p *machinelearningv1alpha2.P
 
 	grpcVsvc := &istio.VirtualService{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      seldonId + "-grpc",
+			Name:      vsNameGrpc,
 			Namespace: namespace,
 		},
 		Spec: istio.VirtualServiceSpec{
