@@ -956,13 +956,13 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		var httpPort = 0
 		var grpcPort = 0
 		var portNum int32 = 9000
-		if p.Explainer.Endpoint.ServicePort != 0 {
+		if p.Explainer.Endpoint != nil && p.Explainer.Endpoint.ServicePort != 0 {
 			portNum = p.Explainer.Endpoint.ServicePort
 		}
 		var pSvcEndpoint = ""
 		customPort := getPort(portType, explainerContainer.Ports)
 
-		if p.Explainer.Endpoint.Type == machinelearningv1alpha2.GRPC {
+		if p.Explainer.Endpoint != nil && p.Explainer.Endpoint.Type == machinelearningv1alpha2.GRPC {
 			portType = "grpc"
 			grpcPort = int(portNum)
 			pSvcEndpoint = c.serviceDetails[pSvcName].GrpcEndpoint
@@ -1001,7 +1001,9 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		for k, v := range p.Explainer.Config {
 			//remote files in model location should get downloaded by initializer
-			v = strings.Replace(v, p.Explainer.ModelUri, "/mnt/models", 1)
+			if p.Explainer.ModelUri != "" {
+				v = strings.Replace(v, p.Explainer.ModelUri, "/mnt/models", 1)
+			}
 			arg := "--" + k + "=" + v
 			explainerContainer.Args = append(explainerContainer.Args, arg)
 		}
@@ -1021,11 +1023,6 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
 		deploy, err := InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
-		if err != nil {
-			return err
-		}
-		// TODO: if user sets ContainerSpec with image then use that
-		//if user specifies ContainerSpec without image then merge with what we have
 
 		// for explainer use same service name as its Deployment
 		eSvcName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)

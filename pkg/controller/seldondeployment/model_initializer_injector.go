@@ -59,9 +59,10 @@ func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.C
 // InjectModelInitializer injects an init container to provision model data
 func InjectModelInitializer(deployment *appsv1.Deployment, containerName string, srcURI string, serviceAccountName string, Client client.Client) (deploy *appsv1.Deployment, err error) {
 
-	//TODO: need to iterate the containers and find the uris from the  env vars?
-	//is this really necessary?
-	//change this to match on a container name and just do that container-URI pair!
+	if srcURI == "" {
+		return deployment, nil
+	}
+
 	var userContainer *corev1.Container
 	for idx, container := range deployment.Spec.Template.Spec.Containers {
 		if strings.Compare(container.Name, containerName) == 0 {
