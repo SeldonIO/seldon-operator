@@ -61,6 +61,18 @@ func (in *Endpoint) DeepCopy() *Endpoint {
 func (in *Explainer) DeepCopyInto(out *Explainer) {
 	*out = *in
 	in.ContainerSpec.DeepCopyInto(&out.ContainerSpec)
+	if in.Config != nil {
+		in, out := &in.Config, &out.Config
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.Endpoint != nil {
+		in, out := &in.Endpoint, &out.Endpoint
+		*out = new(Endpoint)
+		**out = **in
+	}
 	return
 }
 

@@ -189,10 +189,12 @@ type SvcOrchSpec struct {
 }
 
 type Explainer struct {
-	Type               string       `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
-	ModelUri           string       `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
-	ServiceAccountName string       `json:"serviceAccountName,omitempty" protobuf:"string,3,opt,name=serviceAccountName"`
-	ContainerSpec      v1.Container `json:"containerSpec,omitempty" protobuf:"bytes,4,opt,name=containerSpec"`
+	Type               string            `json:"type,omitempty" protobuf:"string,1,opt,name=type"`
+	ModelUri           string            `json:"modelUri,omitempty" protobuf:"string,2,opt,name=modelUri"`
+	ServiceAccountName string            `json:"serviceAccountName,omitempty" protobuf:"string,3,opt,name=serviceAccountName"`
+	ContainerSpec      v1.Container      `json:"containerSpec,omitempty" protobuf:"bytes,4,opt,name=containerSpec"`
+	Config             map[string]string `json:"config,omitempty" protobuf:"bytes,5,opt,name=config"`
+	Endpoint           *Endpoint         `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
 }
 
 type SeldonPodSpec struct {

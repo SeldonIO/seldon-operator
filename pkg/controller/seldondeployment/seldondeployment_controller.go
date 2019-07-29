@@ -945,38 +945,38 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			p.Graph.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
 		}
 
-		// TODO: should use explainer type?
-		var portType string
-		explainerContainer.Image = "seldonio/alibiexplainer:0.1"
+		if explainerContainer.Image == "" {
+			// TODO: should use explainer type but this is the only one available currently
+			explainerContainer.Image = "seldonio/alibiexplainer:0.1"
+		}
 
-		// explainer will follow PU for http/grpc
+		var portType string
+
+		// explainer can get port from spec or from containerSpec or fall back on default
 		var httpPort = 0
 		var grpcPort = 0
 		var portNum int32 = 9000
+		if p.Explainer.Endpoint.ServicePort != 0 {
+			portNum = p.Explainer.Endpoint.ServicePort
+		}
 		var pSvcEndpoint = ""
-		existingPort := getPort(portType, explainerContainer.Ports)
+		customPort := getPort(portType, explainerContainer.Ports)
 
-		// TODO: would be better to get from map like https://github.com/kubeflow/kfserving/pull/237/files#diff-61a4574142a2c6abcbff2ae3a286c52aR68
-		if p.Graph.Endpoint.Type == machinelearningv1alpha2.REST {
-			portType = "http"
-			httpPort = int(portNum)
-			pSvcEndpoint = c.serviceDetails[pSvcName].HttpEndpoint
-		} else {
+		if p.Explainer.Endpoint.Type == machinelearningv1alpha2.GRPC {
 			portType = "grpc"
 			grpcPort = int(portNum)
 			pSvcEndpoint = c.serviceDetails[pSvcName].GrpcEndpoint
+		} else {
+			portType = "http"
+			httpPort = int(portNum)
+			pSvcEndpoint = c.serviceDetails[pSvcName].HttpEndpoint
 		}
 
-		// FIXME: http the only option that works right Now
-		portType = "http"
-		httpPort = int(portNum)
-		pSvcEndpoint = c.serviceDetails[pSvcName].HttpEndpoint
-		grpcPort = 0
-
-		if existingPort == nil {
+		if customPort == nil {
 			explainerContainer.Ports = append(explainerContainer.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
 		} else {
-			portNum = existingPort.ContainerPort
+			portNum = customPort.ContainerPort
+			portType = customPort.Name
 		}
 
 		if explainerContainer.LivenessProbe == nil {
@@ -998,6 +998,13 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			"--protocol=" + "seldon." + portType,
 			"--type=" + strings.ToLower(p.Explainer.Type),
 			"--http_port=" + strconv.Itoa(int(portNum))}
+
+		for k, v := range p.Explainer.Config {
+			//remote files in model location should get downloaded by initializer
+			v = strings.Replace(v, p.Explainer.ModelUri, "/mnt/models", 1)
+			arg := "--" + k + "=" + v
+			explainerContainer.Args = append(explainerContainer.Args, arg)
+		}
 		// see https://github.com/cliveseldon/kfserving/tree/explainer_update_jul/docs/samples/explanation/income for more
 
 		// Add Environment Variables - TODO: are these needed
