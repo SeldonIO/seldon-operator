@@ -52,7 +52,7 @@ func checkPredictiveUnits(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 	if *pu.Implementation == machinelearningv1alpha2.UNKNOWN_IMPLEMENTATION {
 
 		if utils.GetContainerForPredictiveUnit(p, pu.Name) == nil {
-			return false, "Can't find container for Preditive Unit " + pu.Name
+			return false, "Can't find container for Predictive Unit " + pu.Name
 		}
 
 		if *pu.Type == machinelearningv1alpha2.UNKNOWN_TYPE && (pu.Methods == nil || len(*pu.Methods) == 0) {
