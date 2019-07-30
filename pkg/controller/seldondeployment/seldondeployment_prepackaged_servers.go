@@ -193,6 +193,7 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit) error {
 
 	// some predictors have no podSpec so this could be nil
+	// TOOD: if it is nil we either have to create an empty one or change createDeploymentWithoutEngine to handle nil
 	sPodSpec := utils.GetSeldonPodSpecForPredictiveUnit(p, pu.Name)
 
 	depName := machinelearningv1alpha2.GetDeploymentName(mlDep, *p, sPodSpec)

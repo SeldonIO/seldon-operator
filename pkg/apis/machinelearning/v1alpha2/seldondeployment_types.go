@@ -93,7 +93,10 @@ func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, pod
 	if podSpec != nil && len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
 	} else {
-		name := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + containerHash(podSpec)
+		name := mlDep.Spec.Name + "-" + predictorSpec.Name
+		if podSpec != nil {
+			name = name + "-" + containerHash(podSpec)
+		}
 		if len(name) > 63 {
 			return "seldon-" + hash(name)
 		} else {
