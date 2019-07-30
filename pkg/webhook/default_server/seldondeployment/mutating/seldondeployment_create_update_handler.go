@@ -275,8 +275,8 @@ func addModelServerContainers(pu *machinelearningv1alpha2.PredictiveUnit, p *mac
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
 	var nextPortNum int32 = 9000
 	var terminationGracePeriod int64 = 20
-	if env_preditive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
-		portNum, err := strconv.Atoi(env_preditive_unit_service_port)
+	if env_predictive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
+		portNum, err := strconv.Atoi(env_predictive_unit_service_port)
 		if err != nil {
 			return err
 		} else {
