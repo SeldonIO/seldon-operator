@@ -61,7 +61,14 @@ spec:
                     type: object
                   explainer:
                     properties:
+                      config:
+                        type: object
                       containerSpec:
+                        type: object
+                      endpoint:
+                        properties:
+                          type:
+                            type: string
                         type: object
                       modelUri:
                         type: string
