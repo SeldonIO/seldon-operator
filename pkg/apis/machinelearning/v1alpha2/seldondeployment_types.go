@@ -90,7 +90,7 @@ func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) s
 }
 
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
-	if len(podSpec.Metadata.Name) != 0 {
+	if podSpec != nil && len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
 	} else {
 		name := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + containerHash(podSpec)

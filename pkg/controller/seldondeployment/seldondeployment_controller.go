@@ -645,31 +645,47 @@ func createExplainerIstioResources(pSvcName string, p *machinelearningv1alpha2.P
 	return vscs, drules
 }
 
+func getEngineHttpPort() (engine_http_port int, err error) {
+	// Get engine http port from environment or use default
+	engine_http_port = DEFAULT_ENGINE_CONTAINER_PORT
+	var env_engine_http_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_PORT, "")
+	if env_engine_http_port != "" {
+		engine_http_port, err = strconv.Atoi(env_engine_http_port)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return engine_http_port, nil
+}
+
+func getEngineGrpcPort() (engine_grpc_port int, err error) {
+	// Get engine grpc port from environment or use default
+	engine_grpc_port = DEFAULT_ENGINE_GRPC_PORT
+	var env_engine_grpc_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_GRPC_PORT, "")
+	if env_engine_grpc_port != "" {
+		engine_grpc_port, err = strconv.Atoi(env_engine_grpc_port)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return engine_grpc_port, nil
+}
+
 // Create all the components (Deployments, Services etc)
 func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment) (*components, error) {
 	c := components{}
 	c.serviceDetails = map[string]*machinelearningv1alpha2.ServiceStatus{}
 	seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
 	namespace := getNamespace(mlDep)
-	var err error
-	// Get engine http port from environment or use default
-	var engine_http_port = DEFAULT_ENGINE_CONTAINER_PORT
-	var env_engine_http_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_PORT, "")
-	if env_engine_http_port != "" {
-		engine_http_port, err = strconv.Atoi(env_engine_http_port)
-		if err != nil {
-			return nil, err
-		}
+
+	engine_http_port, err := getEngineHttpPort()
+	if err != nil {
+		return nil, err
 	}
 
-	// Get engine grpc port from environment or use default
-	var engine_grpc_port = DEFAULT_ENGINE_GRPC_PORT
-	var env_engine_grpc_port = getEnv(ENV_DEFAULT_ENGINE_SERVER_GRPC_PORT, "")
-	if env_engine_grpc_port != "" {
-		engine_grpc_port, err = strconv.Atoi(env_engine_grpc_port)
-		if err != nil {
-			return nil, err
-		}
+	engine_grpc_port, err := getEngineGrpcPort()
+	if err != nil {
+		return nil, err
 	}
 
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
@@ -701,37 +717,15 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 			// Add service orchestrator to first deployment if needed
 			if j == 0 && !hasSeparateEnginePod {
-				engineContainer, err := createEngineContainer(mlDep, &p, engine_http_port, engine_grpc_port)
+				err := addEngineToDeployment(mlDep, &p, engine_http_port, engine_grpc_port, pSvcName, deploy)
 				if err != nil {
 					return nil, err
 				}
-				deploy.Labels[machinelearningv1alpha2.Label_svc_orch] = "true"
-
-				deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *engineContainer)
-				//deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
-				//deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
-				//deploy.Spec.Template.Annotations = map[string]string{}
-				if deploy.Spec.Template.Annotations == nil {
-					deploy.Spec.Template.Annotations = make(map[string]string)
-				}
-				//overwrite annotations with predictor annotations
-				for _, ann := range p.Annotations {
-					deploy.Spec.Template.Annotations[ann] = p.Annotations[ann]
-				}
-				// Add prometheus annotations
-				deploy.Spec.Template.Annotations["prometheus.io/path"] = getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus")
-				deploy.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(engine_http_port)
-				deploy.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
-
-				deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
-				deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
-				deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
-
 			}
 
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
-				con := cSpec.Spec.Containers[0]
+				con := cSpec.Spec.Containers[0] // TODO: is this a bug? why is k never used?
 
 				svc := createContainerService(deploy, p, mlDep, con, c)
 
@@ -740,6 +734,8 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			// Add deployment
 			c.deployments = append(c.deployments, deploy)
 		}
+
+		createStandaloneModelServers(mlDep, &p, &c, p.Graph)
 
 		//Create Service for Predictor
 
@@ -769,6 +765,35 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 		c.destinationRules = append(c.destinationRules, dstRule...)
 	}
 	return &c, nil
+}
+
+func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port int, engine_grpc_port int, pSvcName string, deploy *appsv1.Deployment) error {
+	engineContainer, err := createEngineContainer(mlDep, p, engine_http_port, engine_grpc_port)
+	if err != nil {
+		return err
+	}
+	deploy.Labels[machinelearningv1alpha2.Label_svc_orch] = "true"
+
+	deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *engineContainer)
+	//deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
+	//deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
+	//deploy.Spec.Template.Annotations = map[string]string{}
+	if deploy.Spec.Template.Annotations == nil {
+		deploy.Spec.Template.Annotations = make(map[string]string)
+	}
+	//overwrite annotations with predictor annotations
+	for _, ann := range p.Annotations {
+		deploy.Spec.Template.Annotations[ann] = p.Annotations[ann]
+	}
+	// Add prometheus annotations
+	deploy.Spec.Template.Annotations["prometheus.io/path"] = getEnv("ENGINE_PROMETHEUS_PATH", "/prometheus")
+	deploy.Spec.Template.Annotations["prometheus.io/port"] = strconv.Itoa(engine_http_port)
+	deploy.Spec.Template.Annotations["prometheus.io/scrape"] = "true"
+
+	deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+	deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+	deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+	return nil
 }
 
 func createPredictorService(pSvcName string, seldonId string, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {

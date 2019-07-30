@@ -18,6 +18,7 @@ import (
 	//	"encoding/json"
 	"fmt"
 	"github.com/seldonio/seldon-operator/pkg/controller/resources/credentials"
+	"github.com/seldonio/seldon-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -63,13 +64,7 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 		return deployment, nil
 	}
 
-	var userContainer *corev1.Container
-	for idx, container := range deployment.Spec.Template.Spec.Containers {
-		if strings.Compare(container.Name, containerName) == 0 {
-			userContainer = &deployment.Spec.Template.Spec.Containers[idx]
-			break
-		}
-	}
+	userContainer := utils.GetContainerForDeployment(deployment, containerName)
 
 	if userContainer == nil {
 		return deployment, fmt.Errorf("Invalid configuration: cannot find container: %s", containerName)
