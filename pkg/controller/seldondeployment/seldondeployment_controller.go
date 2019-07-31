@@ -997,6 +997,10 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 			con.TerminationMessagePolicy = corev1.TerminationMessageReadFile
 		}
 
+		if con.ImagePullPolicy == "" {
+			con.ImagePullPolicy = corev1.PullIfNotPresent
+		}
+
 		volMount := false
 		for _, vol := range con.VolumeMounts {
 			if vol.Name == machinelearningv1alpha2.PODINFO_VOLUME_NAME {

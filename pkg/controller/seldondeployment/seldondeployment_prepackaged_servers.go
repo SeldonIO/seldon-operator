@@ -86,6 +86,18 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			}
 		}
 
+		// Add some defaults for easier diffs
+		if c.TerminationMessagePath == "" {
+			c.TerminationMessagePath = "/dev/termination-log"
+		}
+		if c.TerminationMessagePolicy == "" {
+			c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		}
+
+		if c.ImagePullPolicy == "" {
+			c.ImagePullPolicy = corev1.PullIfNotPresent
+		}
+
 		// Add container to deployment
 		if !existing {
 			if len(deploy.Spec.Template.Spec.Containers) > 0 {
@@ -119,6 +131,18 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 					},
 				},
 			}
+		}
+
+		// Add some defaults for easier diffs
+		if tfServingContainer.TerminationMessagePath == "" {
+			tfServingContainer.TerminationMessagePath = "/dev/termination-log"
+		}
+		if tfServingContainer.TerminationMessagePolicy == "" {
+			tfServingContainer.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		}
+
+		if tfServingContainer.ImagePullPolicy == "" {
+			tfServingContainer.ImagePullPolicy = corev1.PullIfNotPresent
 		}
 
 		if !existing {
@@ -176,6 +200,17 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 			paramStr, err := json.Marshal(params)
 			if err != nil {
 				return err
+			}
+			// Add some defaults for easier diffs
+			if c.TerminationMessagePath == "" {
+				c.TerminationMessagePath = "/dev/termination-log"
+			}
+			if c.TerminationMessagePolicy == "" {
+				c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+			}
+
+			if c.ImagePullPolicy == "" {
+				c.ImagePullPolicy = corev1.PullIfNotPresent
 			}
 			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
 		}
