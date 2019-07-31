@@ -250,7 +250,7 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 				c.services = append(c.services, svc)
 			}
 		}
-
+		c.deployments = append(c.deployments, deploy)
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
