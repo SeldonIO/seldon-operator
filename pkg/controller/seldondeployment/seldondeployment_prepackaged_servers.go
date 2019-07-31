@@ -243,10 +243,11 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 
 		// this is a new deployment so its containers won't have a containerService
 		for k := 0; k < len(deploy.Spec.Template.Spec.Containers); k++ {
-			con := deploy.Spec.Template.Spec.Containers[k]
+			con := &deploy.Spec.Template.Spec.Containers[k]
+
 			if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
 				nextPortNum++
-				svc := createContainerService(deploy, *p, mlDep, &con, *c, nextPortNum)
+				svc := createContainerService(deploy, *p, mlDep, con, *c, nextPortNum)
 				c.services = append(c.services, svc)
 			}
 		}

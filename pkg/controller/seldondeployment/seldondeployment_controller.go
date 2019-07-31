@@ -863,6 +863,7 @@ func createPredictorService(pSvcName string, seldonId string, p *machinelearning
 }
 
 func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, con *corev1.Container, c components, portNum int32) *corev1.Service {
+	fmt.Println("createContainerService for " + con.Name)
 	containerServiceKey := machinelearningv1alpha2.GetPredictorServiceNameKey(con)
 	containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
 	pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
@@ -917,7 +918,7 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 	deploy.Spec.Selector.MatchLabels[containerServiceKey] = containerServiceValue
 	deploy.Spec.Template.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
 
-	if existingPort == nil {
+	if existingPort == nil || con.Ports == nil {
 		con.Ports = append(con.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
 	}
 
