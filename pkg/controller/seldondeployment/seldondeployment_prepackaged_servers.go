@@ -190,10 +190,9 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 	return nil
 }
 
-func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit) error {
+func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit, nextPortNum int32) error {
 
 	// some predictors have no podSpec so this could be nil
-	// TOOD: if it is nil we either have to create an empty one or change createDeploymentWithoutEngine to handle nil
 	sPodSpec := utils.GetSeldonPodSpecForPredictiveUnit(p, pu.Name)
 
 	depName := machinelearningv1alpha2.GetDeploymentName(mlDep, *p, sPodSpec)
@@ -245,16 +244,17 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 		// this is a new deployment so its containers won't have a containerService
 		for k := 0; k < len(deploy.Spec.Template.Spec.Containers); k++ {
 			con := deploy.Spec.Template.Spec.Containers[k]
-
-			svc := createContainerService(deploy, *p, mlDep, con, *c)
-
-			c.services = append(c.services, svc)
+			if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
+				nextPortNum++
+				svc := createContainerService(deploy, *p, mlDep, &con, *c, nextPortNum)
+				c.services = append(c.services, svc)
+			}
 		}
 
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
-		if err := createStandaloneModelServers(mlDep, p, c, &pu.Children[i]); err != nil {
+		if err := createStandaloneModelServers(mlDep, p, c, &pu.Children[i], nextPortNum); err != nil {
 			return err
 		}
 	}

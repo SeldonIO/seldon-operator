@@ -21,6 +21,15 @@ func GetContainerForPredictiveUnit(p *machinelearningv1alpha2.PredictorSpec, nam
 	return nil
 }
 
+func GetPort(name string, ports []v1.ContainerPort) *v1.ContainerPort {
+	for i := 0; i < len(ports); i++ {
+		if ports[i].Name == name {
+			return &ports[i]
+		}
+	}
+	return nil
+}
+
 func GetPredictiveUnitAsJson(params []machinelearningv1alpha2.Parameter) string {
 	str, err := json.Marshal(params)
 	if err != nil {

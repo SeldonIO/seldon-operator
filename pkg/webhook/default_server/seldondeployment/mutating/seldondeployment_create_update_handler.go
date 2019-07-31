@@ -21,16 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
-	"github.com/seldonio/seldon-operator/pkg/utils"
-	"k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"net/http"
-	"os"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission/types"
-	"strconv"
 )
 
 var (
@@ -62,15 +57,6 @@ type SeldonDeploymentCreateUpdateHandler struct {
 	Decoder types.Decoder
 }
 
-func getPort(name string, ports []v1.ContainerPort) *v1.ContainerPort {
-	for i := 0; i < len(ports); i++ {
-		if ports[i].Name == name {
-			return &ports[i]
-		}
-	}
-	return nil
-}
-
 func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 	if pu.Type == nil {
 		ty := machinelearningv1alpha2.UNKNOWN_TYPE
@@ -86,23 +72,11 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 }
 
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
-	var nextPortNum int32 = 9000
-	var terminationGracePeriod int64 = 20
-	if env_predictive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
-		portNum, err := strconv.Atoi(env_predictive_unit_service_port)
-		if err != nil {
-			return err
-		} else {
-			nextPortNum = int32(portNum)
-		}
-	}
 
-	var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
-
-	portMap := map[string]int32{}
 	if mlDep.ObjectMeta.Namespace == "" {
 		mlDep.ObjectMeta.Namespace = "default"
 	}
+
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
 		if p.Graph.Type == nil {
@@ -127,98 +101,12 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
 
-			//Add some default to help with diffs in controller
-			if cSpec.Spec.RestartPolicy == "" {
-				cSpec.Spec.RestartPolicy = corev1.RestartPolicyAlways
-			}
-			if cSpec.Spec.DNSPolicy == "" {
-				cSpec.Spec.DNSPolicy = corev1.DNSClusterFirst
-			}
-			if cSpec.Spec.SchedulerName == "" {
-				cSpec.Spec.SchedulerName = "default-scheduler"
-			}
-			if cSpec.Spec.SecurityContext == nil {
-				cSpec.Spec.SecurityContext = &corev1.PodSecurityContext{}
-			}
-
-			cSpec.Spec.TerminationGracePeriodSeconds = &terminationGracePeriod
-
-			//Add downwardAPI
-			cSpec.Spec.Volumes = append(cSpec.Spec.Volumes, corev1.Volume{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{
-				DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
-					{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}}}, DefaultMode: &defaultMode}}})
-
-			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				con := &cSpec.Spec.Containers[k]
-
-				if _, present := portMap[con.Name]; !present {
-					portMap[con.Name] = nextPortNum
-					nextPortNum++
-				}
-				portNum := portMap[con.Name]
 
 				pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
 
 				if pu != nil {
-
-					// Add some defaults for easier diffs later in controller
-					if con.TerminationMessagePath == "" {
-						con.TerminationMessagePath = "/dev/termination-log"
-					}
-					if con.TerminationMessagePolicy == "" {
-						con.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-					}
-					if con.ImagePullPolicy == "" {
-						con.ImagePullPolicy = corev1.PullIfNotPresent
-					}
-
-					// Add a default REST endpoint if none provided
-					if pu.Endpoint == nil {
-						pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
-					}
-
-					con.VolumeMounts = append(con.VolumeMounts, v1.VolumeMount{
-						Name:      machinelearningv1alpha2.PODINFO_VOLUME_NAME,
-						MountPath: machinelearningv1alpha2.PODINFO_VOLUME_PATH,
-					})
-
-					// Get existing Http or Grpc port and add Liveness and Readiness probes if they don't exist
-					var portType string
-					if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-						portType = "http"
-					} else {
-						portType = "grpc"
-					}
-
-					existingPort := getPort(portType, con.Ports)
-					if existingPort == nil {
-						con.Ports = append(con.Ports, v1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
-					} else {
-						portNum = existingPort.ContainerPort
-					}
-					if con.LivenessProbe == nil {
-						con.LivenessProbe = &v1.Probe{Handler: v1.Handler{TCPSocket: &v1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 60, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1}
-					}
-					if con.ReadinessProbe == nil {
-						con.ReadinessProbe = &v1.Probe{Handler: v1.Handler{TCPSocket: &v1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 20, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1}
-					}
-
-					// Add livecycle probe
-					if con.Lifecycle == nil {
-						con.Lifecycle = &v1.Lifecycle{PreStop: &v1.Handler{Exec: &v1.ExecAction{Command: []string{"/bin/sh", "-c", "/bin/sleep 10"}}}}
-					}
-
-					// Add Environment Variables
-					con.Env = append(con.Env, []v1.EnvVar{
-						v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_SERVICE_PORT, Value: strconv.Itoa(int(portNum))},
-						v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_ID, Value: con.Name},
-						v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTOR_ID, Value: p.Name},
-						v1.EnvVar{Name: machinelearningv1alpha2.ENV_SELDON_DEPLOYMENT_ID, Value: mlDep.ObjectMeta.Name},
-					}...)
-					if len(pu.Parameters) > 0 {
-						con.Env = append(con.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(pu.Parameters)})
-					}
 
 					// Set ports and hostname in predictive unit
 					if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; j == 0 && !hasSeparateEnginePod {
@@ -227,7 +115,6 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 						containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
 						pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
 					}
-					pu.Endpoint.ServicePort = portNum
 				} else {
 					// Add some defaults for easier diffs later in controller
 					if con.TerminationMessagePath == "" {
