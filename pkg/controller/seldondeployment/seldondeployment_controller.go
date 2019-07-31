@@ -945,7 +945,9 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 	}
 
 	if pu != nil && len(pu.Parameters) > 0 {
-		con.Env = append(con.Env, corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(pu.Parameters)})
+		if !utils.HasEnvVar(con.Env, machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS) {
+			con.Env = append(con.Env, corev1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(pu.Parameters)})
+		}
 	}
 
 	return svc

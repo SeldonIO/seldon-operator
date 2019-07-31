@@ -81,7 +81,9 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 		// TODO: this isn't going to be enough - need to set all the defaults that the webhook does
 		parameters := append(pu.Parameters, uriParam)
 		if len(parameters) > 0 {
-			c.Env = append(c.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(parameters)})
+			if !utils.HasEnvVar(c.Env, machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS) {
+				c.Env = append(c.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(parameters)})
+			}
 		}
 
 		// Add container to deployment
