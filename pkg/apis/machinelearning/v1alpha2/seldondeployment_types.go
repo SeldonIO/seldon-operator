@@ -141,6 +141,18 @@ func GetPredcitiveUnit(pu *PredictiveUnit, name string) *PredictiveUnit {
 	}
 }
 
+func GetPredictiveUnitList(p *PredictiveUnit) (list []*PredictiveUnit) {
+	list = append(list, p)
+
+	for i := 0; i < len(p.Children); i++ {
+		pu := &p.Children[i]
+		if pu != nil {
+			list = append(list, GetPredictiveUnitList(p)...)
+		}
+	}
+	return list
+}
+
 func cleanContainerName(name string) string {
 	var re = regexp.MustCompile("[^-a-z0-9]")
 	return re.ReplaceAllString(strings.ToLower(name), "-")
