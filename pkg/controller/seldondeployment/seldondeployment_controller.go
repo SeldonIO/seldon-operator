@@ -738,7 +738,8 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
-				con := cSpec.Spec.Containers[k]
+				var con *corev1.Container
+				con = utils.GetContainerForDeployment(deploy, cSpec.Spec.Containers[k].Name)
 
 				if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
 
@@ -748,7 +749,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 					}
 					portNum := portMap[con.Name]
 
-					svc := createContainerService(deploy, p, mlDep, &con, c, portNum)
+					svc := createContainerService(deploy, p, mlDep, con, c, portNum)
 
 					c.services = append(c.services, svc)
 				}
@@ -915,6 +916,10 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 	deploy.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
 	deploy.Spec.Selector.MatchLabels[containerServiceKey] = containerServiceValue
 	deploy.Spec.Template.ObjectMeta.Labels[containerServiceKey] = containerServiceValue
+
+	if existingPort == nil {
+		con.Ports = append(con.Ports, corev1.ContainerPort{Name: portType, ContainerPort: portNum, Protocol: corev1.ProtocolTCP})
+	}
 
 	if con.LivenessProbe == nil {
 		con.LivenessProbe = &corev1.Probe{Handler: corev1.Handler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString(portType)}}, InitialDelaySeconds: 60, PeriodSeconds: 5, SuccessThreshold: 1, FailureThreshold: 3, TimeoutSeconds: 1}
