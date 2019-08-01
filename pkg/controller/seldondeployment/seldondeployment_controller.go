@@ -438,7 +438,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 		}
 
 		//Create Service for Predictor - exposed externally (ambassador or istio) and points at engine
-		psvc, err := createPredictorService(pSvcName, seldonId, &p, mlDep, engine_http_port, engine_grpc_port)
+		psvc, err := createPredictorService(pSvcName, seldonId, &p, mlDep, engine_http_port, engine_grpc_port, "")
 		if err != nil {
 
 			return nil, err
@@ -467,7 +467,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 }
 
 //Creates Service for Predictor - exposed externally (ambassador or istio)
-func createPredictorService(pSvcName string, seldonId string, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {
+func createPredictorService(pSvcName string, seldonId string, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int, ambassadorNameOverride string) (pSvc *corev1.Service, err error) {
 	namespace := getNamespace(mlDep)
 
 	psvc := &corev1.Service{
@@ -495,7 +495,7 @@ func createPredictorService(pSvcName string, seldonId string, p *machinelearning
 	if getEnv("AMBASSADOR_ENABLED", "false") == "true" {
 		psvc.Annotations = make(map[string]string)
 		//Create top level Service
-		ambassadorConfig, err := getAmbassadorConfigs(mlDep, p, pSvcName, engine_http_port, engine_grpc_port)
+		ambassadorConfig, err := getAmbassadorConfigs(mlDep, p, pSvcName, engine_http_port, engine_grpc_port, ambassadorNameOverride)
 		if err != nil {
 			return nil, err
 		}
