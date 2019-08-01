@@ -689,18 +689,6 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 		return nil, err
 	}
 
-	var nextPortNum int32 = 9000
-	if env_predictive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
-		portNum, err := strconv.Atoi(env_predictive_unit_service_port)
-		if err != nil {
-			return nil, err
-		} else {
-			nextPortNum = int32(portNum)
-		}
-	}
-
-	portMap := map[string]int32{}
-
 	for i := 0; i < len(mlDep.Spec.Predictors); i++ {
 		p := mlDep.Spec.Predictors[i]
 		pSvcName := machinelearningv1alpha2.GetPredictorKey(mlDep, &p)
@@ -743,25 +731,23 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 				if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
 
-					if _, present := portMap[con.Name]; !present {
-						portMap[con.Name] = nextPortNum
-						nextPortNum++
+					// service for hitting a model directly, not via engine
+					svc := createContainerService(deploy, p, mlDep, con, c)
+					if svc != nil {
+						c.services = append(c.services, svc)
+					} else {
+						// a user-supplied container may not be a pu so we may not create service for that
+						log.Info("Not creating container service for " + con.Name)
 					}
-					portNum := portMap[con.Name]
-
-					svc := createContainerService(deploy, p, mlDep, con, c, portNum)
-
-					c.services = append(c.services, svc)
 				}
 			}
 			// Add deployment
 			c.deployments = append(c.deployments, deploy)
 		}
 
-		createStandaloneModelServers(mlDep, &p, &c, p.Graph, nextPortNum)
+		createStandaloneModelServers(mlDep, &p, &c, p.Graph)
 
-		//Create Service for Predictor
-
+		//Create Service for Predictor - exposed externally (ambassador or istio) and points at engine
 		psvc, err := createPredictorService(pSvcName, seldonId, &p, mlDep, engine_http_port, engine_grpc_port)
 		if err != nil {
 
@@ -819,6 +805,7 @@ func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	return nil
 }
 
+//Creates Service for Predictor - exposed externally (ambassador or istio)
 func createPredictorService(pSvcName string, seldonId string, p *machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, engine_http_port int, engine_grpc_port int) (pSvc *corev1.Service, err error) {
 	namespace := getNamespace(mlDep)
 
@@ -862,12 +849,15 @@ func createPredictorService(pSvcName string, seldonId string, p *machinelearning
 	return psvc, err
 }
 
-func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, con *corev1.Container, c components, portNum int32) *corev1.Service {
+// service for hitting a model directly, not via engine - not exposed externally, also adds probes
+func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2.PredictorSpec, mlDep *machinelearningv1alpha2.SeldonDeployment, con *corev1.Container, c components) *corev1.Service {
 	containerServiceKey := machinelearningv1alpha2.GetPredictorServiceNameKey(con)
 	containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
 	pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
 	namespace := getNamespace(mlDep)
 	portType := "http"
+	var portNum int32
+	portNum = 0
 	existingPort := utils.GetPort(portType, con.Ports)
 	if existingPort != nil {
 		portNum = existingPort.ContainerPort
@@ -877,8 +867,16 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 		portType = "grpc"
 	}
 
+	// pu should have a port set by seldondeployment_create_update_handler.go (if not by user)
+	// that mutator modifies SeldonDeployment and fires before this controller
 	if pu != nil && pu.Endpoint.ServicePort != 0 {
 		portNum = pu.Endpoint.ServicePort
+	}
+
+	if portNum == 0 {
+		// this is a user-supplied continer, it isn't a pu and doesn't have a port
+		// we don't know what it would respond to so can't create a service for it
+		return nil
 	}
 
 	if portType == "grpc" {
@@ -1160,6 +1158,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 
 		c.deployments = append(c.deployments, deploy)
 
+		//Create Service to be exposed externally (ambassador or istio)
 		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort)
 		if err != nil {
 			return err

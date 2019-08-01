@@ -86,17 +86,7 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			}
 		}
 
-		// Add some defaults for easier diffs
-		if c.TerminationMessagePath == "" {
-			c.TerminationMessagePath = "/dev/termination-log"
-		}
-		if c.TerminationMessagePolicy == "" {
-			c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		}
-
-		if c.ImagePullPolicy == "" {
-			c.ImagePullPolicy = corev1.PullIfNotPresent
-		}
+		addContainerDefaults(c)
 
 		// Add container to deployment
 		if !existing {
@@ -133,17 +123,7 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			}
 		}
 
-		// Add some defaults for easier diffs
-		if tfServingContainer.TerminationMessagePath == "" {
-			tfServingContainer.TerminationMessagePath = "/dev/termination-log"
-		}
-		if tfServingContainer.TerminationMessagePolicy == "" {
-			tfServingContainer.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		}
-
-		if tfServingContainer.ImagePullPolicy == "" {
-			tfServingContainer.ImagePullPolicy = corev1.PullIfNotPresent
-		}
+		addContainerDefaults(tfServingContainer)
 
 		if !existing {
 			deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *tfServingContainer)
@@ -201,17 +181,8 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 			if err != nil {
 				return err
 			}
-			// Add some defaults for easier diffs
-			if c.TerminationMessagePath == "" {
-				c.TerminationMessagePath = "/dev/termination-log"
-			}
-			if c.TerminationMessagePolicy == "" {
-				c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-			}
+			addContainerDefaults(c)
 
-			if c.ImagePullPolicy == "" {
-				c.ImagePullPolicy = corev1.PullIfNotPresent
-			}
 			c.Env = append(c.Env, corev1.EnvVar{Name: constants.PU_PARAMETER_ENVVAR, Value: string(paramStr)})
 		}
 
@@ -227,7 +198,21 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 	return nil
 }
 
-func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit, nextPortNum int32) error {
+func addContainerDefaults(c *v1.Container) {
+	// Add some defaults for easier diffs
+	if c.TerminationMessagePath == "" {
+		c.TerminationMessagePath = "/dev/termination-log"
+	}
+	if c.TerminationMessagePolicy == "" {
+		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+	}
+
+	if c.ImagePullPolicy == "" {
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+	}
+}
+
+func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit) error {
 
 	// some predictors have no podSpec so this could be nil
 	sPodSpec := utils.GetSeldonPodSpecForPredictiveUnit(p, pu.Name)
@@ -283,8 +268,7 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 			con := &deploy.Spec.Template.Spec.Containers[k]
 
 			if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
-				nextPortNum++
-				svc := createContainerService(deploy, *p, mlDep, con, *c, nextPortNum)
+				svc := createContainerService(deploy, *p, mlDep, con, *c)
 				c.services = append(c.services, svc)
 			}
 		}
@@ -292,7 +276,7 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
-		if err := createStandaloneModelServers(mlDep, p, c, &pu.Children[i], nextPortNum); err != nil {
+		if err := createStandaloneModelServers(mlDep, p, c, &pu.Children[i]); err != nil {
 			return err
 		}
 	}
