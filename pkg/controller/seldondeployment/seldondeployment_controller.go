@@ -432,7 +432,10 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			c.deployments = append(c.deployments, deploy)
 		}
 
-		createStandaloneModelServers(mlDep, &p, &c, p.Graph)
+		err = createStandaloneModelServers(r, mlDep, &p, &c, p.Graph)
+		if err != nil {
+			return nil, err
+		}
 
 		//Create Service for Predictor - exposed externally (ambassador or istio) and points at engine
 		psvc, err := createPredictorService(pSvcName, seldonId, &p, mlDep, engine_http_port, engine_grpc_port)
@@ -657,18 +660,6 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 			con.ImagePullPolicy = corev1.PullIfNotPresent
 		}
 
-		volMount := false
-		for _, vol := range con.VolumeMounts {
-			if vol.Name == machinelearningv1alpha2.PODINFO_VOLUME_NAME {
-				volMount = true
-			}
-		}
-		if !volMount {
-			con.VolumeMounts = append(con.VolumeMounts, corev1.VolumeMount{
-				Name:      machinelearningv1alpha2.PODINFO_VOLUME_NAME,
-				MountPath: machinelearningv1alpha2.PODINFO_VOLUME_PATH,
-			})
-		}
 	}
 
 	//Add some default to help with diffs in controller
@@ -686,21 +677,6 @@ func createDeploymentWithoutEngine(depName string, seldonId string, seldonPodSpe
 	}
 	var terminationGracePeriod int64 = 20
 	deploy.Spec.Template.Spec.TerminationGracePeriodSeconds = &terminationGracePeriod
-
-	volFound := false
-	for _, vol := range deploy.Spec.Template.Spec.Volumes {
-		if vol.Name == machinelearningv1alpha2.PODINFO_VOLUME_NAME {
-			volFound = true
-		}
-	}
-
-	if !volFound {
-		var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
-		//Add downwardAPI
-		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, corev1.Volume{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{
-			DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
-				{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}}}, DefaultMode: &defaultMode}}})
-	}
 
 	return deploy
 }

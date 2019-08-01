@@ -35,13 +35,13 @@ const (
 	PvcURIPrefix                     = "pvc://"
 	PvcSourceMountName               = "kfserving-pvc-source"
 	PvcSourceMountPath               = "/mnt/pvc"
+	ModelInitializerVolumeSuffix     = "provision-location"
+	ModelInitializerContainerSuffix  = "model-initializer"
 )
 
 var (
-	ControllerNamespace           = getEnv("POD_NAMESPACE", "seldon-system")
-	ControllerConfigMapName       = "seldon-config"
-	ModelInitializerVolumeName    = "provision-location"
-	ModelInitializerContainerName = "model-initializer"
+	ControllerNamespace     = getEnv("POD_NAMESPACE", "seldon-system")
+	ControllerConfigMapName = "seldon-config"
 )
 
 func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.CredentialBuilder, err error) {
@@ -70,20 +70,17 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 		return deployment, fmt.Errorf("Invalid configuration: cannot find container: %s", containerName)
 	}
 
-	if !strings.HasPrefix(ModelInitializerVolumeName, userContainer.Name+"-") {
-		ModelInitializerVolumeName = userContainer.Name + "-" + ModelInitializerVolumeName
-		//kubernetes names limited to 63
-		if len(ModelInitializerVolumeName) > 63 {
-			ModelInitializerVolumeName = ModelInitializerVolumeName[0:63]
-			ModelInitializerVolumeName = strings.TrimSuffix(ModelInitializerVolumeName, "-")
-		}
+	ModelInitializerVolumeName := userContainer.Name + "-" + ModelInitializerVolumeSuffix
+	//kubernetes names limited to 63
+	if len(ModelInitializerVolumeName) > 63 {
+		ModelInitializerVolumeName = ModelInitializerVolumeName[0:63]
+		ModelInitializerVolumeName = strings.TrimSuffix(ModelInitializerVolumeName, "-")
 	}
-	if !strings.HasPrefix(ModelInitializerContainerName, userContainer.Name+"-") {
-		ModelInitializerContainerName = userContainer.Name + "-" + ModelInitializerContainerName
-		if len(ModelInitializerContainerName) > 63 {
-			ModelInitializerContainerName = ModelInitializerContainerName[0:63]
-			ModelInitializerContainerName = strings.TrimSuffix(ModelInitializerContainerName, "-")
-		}
+
+	ModelInitializerContainerName := userContainer.Name + "-" + ModelInitializerContainerSuffix
+	if len(ModelInitializerContainerName) > 63 {
+		ModelInitializerContainerName = ModelInitializerContainerName[0:63]
+		ModelInitializerContainerName = strings.TrimSuffix(ModelInitializerContainerName, "-")
 	}
 
 	// TODO: KFServing does a check for an annotation before injecting - not doing that for now
@@ -188,14 +185,6 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 	// Add init container to the spec
 	podSpec.InitContainers = append(podSpec.InitContainers, *initContainer)
 
-	// TOOD: take out commented debugging code!
-	//fmt.Printf("Explainer container at end of initializer")
-	//jStr1, err := json.Marshal(userContainer)
-	//fmt.Println(string(jStr1))
-
-	//fmt.Printf("Deployment at end of initializer")
-	//jStr2, err := json.Marshal(deployment)
-	//fmt.Println(string(jStr2))
 	return deployment, nil
 }
 

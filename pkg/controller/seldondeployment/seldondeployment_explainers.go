@@ -97,7 +97,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}
 
 		explainerContainer.Args = []string{
-			"--explainerUri=/mnt/models",
+			"--explainerUri=" + DefaultModelLocalMountPath,
 			"--explainer_name=" + mlDep.Name,
 			"--predict_url=" + "http://" + pSvcEndpoint + "/api/v0.1/predictions",
 			"--protocol=" + "seldon." + portType,
@@ -130,7 +130,9 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
 		deploy, err := InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
-
+		if err != nil {
+			return err
+		}
 		// for explainer use same service name as its Deployment
 		eSvcName := machinelearningv1alpha2.GetExplainerDeploymentName(mlDep.ObjectMeta.Name, p)
 

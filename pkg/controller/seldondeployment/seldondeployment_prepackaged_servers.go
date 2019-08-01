@@ -36,7 +36,7 @@ var (
 	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
 )
 
-func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
+func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
 
 	if *pu.Implementation == machinelearningv1alpha2.TENSORFLOW_SERVER {
 
@@ -78,7 +78,6 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 			c.ImagePullPolicy = v1.PullAlways
 		}
 
-		// TODO: this isn't going to be enough - need to set all the defaults that the webhook does
 		parameters := append(pu.Parameters, uriParam)
 		if len(parameters) > 0 {
 			if !utils.HasEnvVar(c.Env, machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS) {
@@ -108,7 +107,7 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 					"--port=2000",
 					"--rest_api_port=2001",
 					"--model_name=" + pu.Name,
-					"--model_base_path=" + pu.ModelURI},
+					"--model_base_path=" + DefaultModelLocalMountPath},
 				ImagePullPolicy: v1.PullIfNotPresent,
 				Ports: []v1.ContainerPort{
 					{
@@ -127,13 +126,17 @@ func addTFServerContainer(pu *machinelearningv1alpha2.PredictiveUnit, p *machine
 
 		if !existing {
 			deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *tfServingContainer)
+		}
 
+		_, err := InjectModelInitializer(deploy, tfServingContainer.Name, pu.ModelURI, pu.ServiceAccountName, r)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
+func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
 	if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
 		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
 
@@ -168,13 +171,14 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 				}
 			}
 		}
-		// Add parameters envvar
+
+		// Add parameters envvar - point at mount path because initContainer will download
 		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
 			params := pu.Parameters
 			uriParam := machinelearningv1alpha2.Parameter{
 				Name:  "model_uri",
 				Type:  "STRING",
-				Value: pu.ModelURI,
+				Value: DefaultModelLocalMountPath,
 			}
 			params = append(params, uriParam)
 			paramStr, err := json.Marshal(params)
@@ -194,6 +198,11 @@ func addModelDefaultServers(pu *machinelearningv1alpha2.PredictiveUnit, p *machi
 				deploy.Spec.Template.Spec.Containers = []v1.Container{*c}
 			}
 		}
+
+		_, err := InjectModelInitializer(deploy, c.Name, pu.ModelURI, pu.ServiceAccountName, r.Client)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -212,7 +221,7 @@ func addContainerDefaults(c *v1.Container) {
 	}
 }
 
-func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit) error {
+func createStandaloneModelServers(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, c *components, pu *machinelearningv1alpha2.PredictiveUnit) error {
 
 	// some predictors have no podSpec so this could be nil
 	sPodSpec := utils.GetSeldonPodSpecForPredictiveUnit(p, pu.Name)
@@ -252,12 +261,10 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 		}
 	}
 
-	// TODO: need to do InjectModelInitializer stuff
-
-	if err := addModelDefaultServers(pu, p, deploy); err != nil {
+	if err := addModelDefaultServers(r, pu, p, deploy); err != nil {
 		return err
 	}
-	if err := addTFServerContainer(pu, p, deploy); err != nil {
+	if err := addTFServerContainer(r, pu, p, deploy); err != nil {
 		return err
 	}
 
@@ -276,7 +283,7 @@ func createStandaloneModelServers(mlDep *machinelearningv1alpha2.SeldonDeploymen
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
-		if err := createStandaloneModelServers(mlDep, p, c, &pu.Children[i]); err != nil {
+		if err := createStandaloneModelServers(r, mlDep, p, c, &pu.Children[i]); err != nil {
 			return err
 		}
 	}

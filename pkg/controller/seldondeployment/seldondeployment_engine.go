@@ -34,6 +34,20 @@ func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	}
 	deploy.Labels[machinelearningv1alpha2.Label_svc_orch] = "true"
 
+	//downward api used to make pod info available to container
+	volMount := false
+	for _, vol := range engineContainer.VolumeMounts {
+		if vol.Name == machinelearningv1alpha2.PODINFO_VOLUME_NAME {
+			volMount = true
+		}
+	}
+	if !volMount {
+		engineContainer.VolumeMounts = append(engineContainer.VolumeMounts, corev1.VolumeMount{
+			Name:      machinelearningv1alpha2.PODINFO_VOLUME_NAME,
+			MountPath: machinelearningv1alpha2.PODINFO_VOLUME_PATH,
+		})
+	}
+
 	deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *engineContainer)
 	//deploy.Spec.Template.Spec.ServiceAccountName = getEnv("ENGINE_CONTAINER_SERVICE_ACCOUNT_NAME", "seldon")
 	//deploy.Spec.Template.Spec.DeprecatedServiceAccount = deploy.Spec.Template.Spec.ServiceAccountName
@@ -53,6 +67,22 @@ func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	deploy.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
 	deploy.Spec.Selector.MatchLabels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
 	deploy.Spec.Template.ObjectMeta.Labels[machinelearningv1alpha2.Label_seldon_app] = pSvcName
+
+	volFound := false
+	for _, vol := range deploy.Spec.Template.Spec.Volumes {
+		if vol.Name == machinelearningv1alpha2.PODINFO_VOLUME_NAME {
+			volFound = true
+		}
+	}
+
+	if !volFound {
+		var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
+		//Add downwardAPI
+		deploy.Spec.Template.Spec.Volumes = append(deploy.Spec.Template.Spec.Volumes, corev1.Volume{Name: machinelearningv1alpha2.PODINFO_VOLUME_NAME, VolumeSource: corev1.VolumeSource{
+			DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
+				{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}}}, DefaultMode: &defaultMode}}})
+	}
+
 	return nil
 }
 
