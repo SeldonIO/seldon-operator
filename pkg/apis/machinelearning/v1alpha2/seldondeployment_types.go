@@ -147,7 +147,7 @@ func GetPredictiveUnitList(p *PredictiveUnit) (list []*PredictiveUnit) {
 	for i := 0; i < len(p.Children); i++ {
 		pu := &p.Children[i]
 		if pu != nil {
-			list = append(list, GetPredictiveUnitList(p)...)
+			list = append(list, GetPredictiveUnitList(pu)...)
 		}
 	}
 	return list
