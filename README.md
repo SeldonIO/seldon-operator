@@ -9,6 +9,11 @@ Kubebuilder is required to build the project.
 Run `export GO111MODULE=off`
 Run with `make`
 
+Key files:
+
+* mutating/seldondeployment_create_update_handler in the webhook mutates the SeldonDeployment to add info needed by the engine to direct traffic in the graph.
+* seldondeployment_controller has the main loop code for the controller and its package has supporting functions. Parses graph and creates list of components, which are then submitted to k8s. Predictor service is created and SeldonDeployment status updated when everything else is ready.
+
 ### Historical Notes
 This project was created with kubebuilder using the following commands.
 

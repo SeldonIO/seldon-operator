@@ -403,20 +403,14 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 				deploy.Spec.Replicas = &p.Replicas
 			}
 
-			// Add service orchestrator to first deployment if needed
-			if j == 0 && !hasSeparateEnginePod {
-				err := addEngineToDeployment(mlDep, &p, engine_http_port, engine_grpc_port, pSvcName, deploy)
-				if err != nil {
-					return nil, err
-				}
-			}
-
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				var con *corev1.Container
 				con = utils.GetContainerForDeployment(deploy, cSpec.Spec.Containers[k].Name)
 
-				if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
+				// engine will later get a special predictor service as it is entrypoint for graph
+				// and no need to expose tfserving container as it's accessed via proxy
+				if con.Name != "seldon-container-engine" && con.Name != "tfserving" && con.Name != "" {
 
 					// service for hitting a model directly, not via engine
 					svc := createContainerService(deploy, p, mlDep, con, c)
@@ -428,13 +422,45 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 					}
 				}
 			}
-			// Add deployment
-			c.deployments = append(c.deployments, deploy)
+			if len(deploy.Spec.Template.Spec.Containers) > 0 && deploy.Spec.Template.Spec.Containers[0].Name != "" {
+				// Add deployment, provided we have a non-empty spec
+				c.deployments = append(c.deployments, deploy)
+			}
 		}
 
 		err = createStandaloneModelServers(r, mlDep, &p, &c, p.Graph)
 		if err != nil {
 			return nil, err
+		}
+
+		// Add service orchestrator to engine deployment if needed
+		if !hasSeparateEnginePod {
+			var deploy *appsv1.Deployment
+			found := false
+
+			pu := machinelearningv1alpha2.GetEnginePredictiveUnit(p.Graph)
+			if pu == nil {
+				return nil, fmt.Errorf("Engine not separate and no pu with localhost service - not clear where to inject engine")
+			}
+			// find the deployment with a container for the pu marked for engine
+			for i, _ := range c.deployments {
+				dep := c.deployments[i]
+				for _, con := range dep.Spec.Template.Spec.Containers {
+					if strings.Compare(con.Name, pu.Name) == 0 {
+						deploy = dep
+						found = true
+					}
+				}
+			}
+
+			if !found {
+				return nil, fmt.Errorf("Engine not separate and no deployment for pu with localhost service - not clear where to inject engine")
+			}
+			err := addEngineToDeployment(mlDep, &p, engine_http_port, engine_grpc_port, pSvcName, deploy)
+			if err != nil {
+				return nil, err
+			}
+
 		}
 
 		//Create Service for Predictor - exposed externally (ambassador or istio) and points at engine

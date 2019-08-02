@@ -76,15 +76,17 @@ func addDefaultsToGraph(pu *machinelearningv1alpha2.PredictiveUnit) {
 
 func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx context.Context, mlDep *machinelearningv1alpha2.SeldonDeployment) error {
 
-	var nextPortNum int32 = 9000
+	var firstPuPortNum int32 = 9000
 	if env_preditive_unit_service_port, ok := os.LookupEnv("PREDICTIVE_UNIT_SERVICE_PORT"); ok {
 		portNum, err := strconv.Atoi(env_preditive_unit_service_port)
 		if err != nil {
 			return err
 		} else {
-			nextPortNum = int32(portNum)
+			firstPuPortNum = int32(portNum)
 		}
 	}
+	nextPortNum := firstPuPortNum
+
 	portMap := map[string]int32{}
 
 	if mlDep.ObjectMeta.Namespace == "" {
@@ -119,13 +121,18 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 			con := utils.GetContainerForPredictiveUnit(&p, pu.Name)
 
+			//only assign host and port if there's a container or it's a prepackaged model server
+			if *pu.Implementation != machinelearningv1alpha2.SKLEARN_SERVER && *pu.Implementation != machinelearningv1alpha2.XGBOOST_SERVER && *pu.Implementation != machinelearningv1alpha2.TENSORFLOW_SERVER && (con == nil || con.Name == "") {
+				continue
+			}
+
 			if _, present := portMap[pu.Name]; !present {
 				portMap[pu.Name] = nextPortNum
 				nextPortNum++
 			}
 			portNum := portMap[pu.Name]
 			// Add a default REST endpoint if none provided
-			// pu needs to have an endpoint as engine reads it from SDep
+			// pu needs to have an endpoint as engine reads it from SDep in order to direct graph traffic
 			// probes etc will be added later by controller
 			if pu.Endpoint == nil {
 				pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
@@ -144,8 +151,8 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 				}
 			}
 
-			// Set ports and hostname in predictive unit
-			if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; j == 0 && !hasSeparateEnginePod {
+			// Set ports and hostname in predictive unit so engine can read it from SDep
+			if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; portNum == firstPuPortNum && !hasSeparateEnginePod {
 				pu.Endpoint.ServiceHost = "localhost"
 			} else {
 				containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)

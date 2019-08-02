@@ -142,7 +142,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		c.deployments = append(c.deployments, deploy)
 
 		//Create Service to be exposed externally (ambassador or istio)
-		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort, mlDep.Name+"-explainer")
+		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort, p.Name+"-explainer")
 		if err != nil {
 			return err
 		}

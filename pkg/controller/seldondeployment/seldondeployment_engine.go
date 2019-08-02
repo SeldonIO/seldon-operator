@@ -25,9 +25,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port int, engine_grpc_port int, pSvcName string, deploy *appsv1.Deployment) error {
+	//check not already present
+	for _, con := range deploy.Spec.Template.Spec.Containers {
+		if strings.Compare(con.Name, "seldon-container-engine") == 0 {
+			return nil
+		}
+	}
 	engineContainer, err := createEngineContainer(mlDep, p, engine_http_port, engine_grpc_port)
 	if err != nil {
 		return err

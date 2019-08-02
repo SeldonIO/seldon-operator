@@ -243,22 +243,6 @@ func createStandaloneModelServers(r *ReconcileSeldonDeployment, mlDep *machinele
 	if deploy == nil {
 		seldonId := machinelearningv1alpha2.GetSeldonDeploymentName(mlDep)
 		deploy = createDeploymentWithoutEngine(depName, seldonId, sPodSpec, p, mlDep)
-		pSvcName := machinelearningv1alpha2.GetPredictorKey(mlDep, p)
-
-		_, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]
-		// Add service orchestrator to first deployment if needed
-		if len(c.deployments) == 0 && !hasSeparateEnginePod {
-			engine_http_port, err := getEngineHttpPort()
-			if err != nil {
-				return err
-			}
-
-			engine_grpc_port, err := getEngineGrpcPort()
-			if err != nil {
-				return err
-			}
-			addEngineToDeployment(mlDep, p, engine_http_port, engine_grpc_port, pSvcName, deploy)
-		}
 	}
 
 	if err := addModelDefaultServers(r, pu, p, deploy); err != nil {
@@ -274,12 +258,15 @@ func createStandaloneModelServers(r *ReconcileSeldonDeployment, mlDep *machinele
 		for k := 0; k < len(deploy.Spec.Template.Spec.Containers); k++ {
 			con := &deploy.Spec.Template.Spec.Containers[k]
 
-			if con.Name != "seldon-container-engine" && con.Name != "tfserving" {
+			if con.Name != "seldon-container-engine" && con.Name != "tfserving" && con.Name != "" {
 				svc := createContainerService(deploy, *p, mlDep, con, *c)
 				c.services = append(c.services, svc)
 			}
 		}
-		c.deployments = append(c.deployments, deploy)
+		if len(deploy.Spec.Template.Spec.Containers) > 0 && deploy.Spec.Template.Spec.Containers[0].Name != "" {
+			// Add deployment, provided we have a non-empty spec
+			c.deployments = append(c.deployments, deploy)
+		}
 	}
 
 	for i := 0; i < len(pu.Children); i++ {
