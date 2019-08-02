@@ -114,10 +114,76 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 		mlDep.Spec.Predictors[i] = p
 
+		for j := 0; j < len(p.ComponentSpecs); j++ {
+			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
+
+			// add service details for each container - looping this way as if containers in same pod and its the engine pod both need to be localhost
+			for k := 0; k < len(cSpec.Spec.Containers); k++ {
+				con := &cSpec.Spec.Containers[k]
+
+				if _, present := portMap[con.Name]; !present {
+					portMap[con.Name] = nextPortNum
+					nextPortNum++
+				}
+				portNum := portMap[con.Name]
+
+				pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
+
+				if pu != nil {
+
+					if pu.Endpoint == nil {
+						pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
+					}
+					var portType string
+					if pu.Endpoint.Type == machinelearningv1alpha2.GRPC {
+						portType = "grpc"
+					} else {
+						portType = "http"
+					}
+
+					if con != nil {
+						existingPort := utils.GetPort(portType, con.Ports)
+						if existingPort != nil {
+							portNum = existingPort.ContainerPort
+						}
+					}
+
+					// Set ports and hostname in predictive unit so engine can read it from SDep
+					// if this is the first componentSpec then it's the one to put the engine in - note using outer loop counter here
+					if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; j == 0 && !hasSeparateEnginePod {
+						pu.Endpoint.ServiceHost = "localhost"
+					} else {
+						containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
+						pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
+					}
+					pu.Endpoint.ServicePort = portNum
+				}
+			}
+
+			// Add defaultMode to volumes ifnot set to ensure no changes when comparing later in controller
+			for k := 0; k < len(cSpec.Spec.Volumes); k++ {
+				vol := &cSpec.Spec.Volumes[k]
+				if vol.Secret != nil && vol.Secret.DefaultMode == nil {
+					var defaultMode = corev1.SecretVolumeSourceDefaultMode
+					vol.Secret.DefaultMode = &defaultMode
+				} else if vol.ConfigMap != nil && vol.ConfigMap.DefaultMode == nil {
+					var defaultMode = corev1.ConfigMapVolumeSourceDefaultMode
+					vol.ConfigMap.DefaultMode = &defaultMode
+				} else if vol.DownwardAPI != nil && vol.DownwardAPI.DefaultMode == nil {
+					var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
+					vol.DownwardAPI.DefaultMode = &defaultMode
+				} else if vol.Projected != nil && vol.Projected.DefaultMode == nil {
+					var defaultMode = corev1.ProjectedVolumeSourceDefaultMode
+					vol.Projected.DefaultMode = &defaultMode
+				}
+			}
+		}
+
 		pus := machinelearningv1alpha2.GetPredictiveUnitList(p.Graph)
 
-		for j := 0; j < len(pus); j++ {
-			pu := pus[j]
+		//some pus might not have a container spec so pick those up
+		for l := 0; l < len(pus); l++ {
+			pu := pus[l]
 
 			con := utils.GetContainerForPredictiveUnit(&p, pu.Name)
 
@@ -138,10 +204,10 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 				pu.Endpoint = &machinelearningv1alpha2.Endpoint{Type: machinelearningv1alpha2.REST}
 			}
 			var portType string
-			if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-				portType = "http"
-			} else {
+			if pu.Endpoint.Type == machinelearningv1alpha2.GRPC {
 				portType = "grpc"
+			} else {
+				portType = "http"
 			}
 
 			if con != nil {
@@ -150,39 +216,22 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 					portNum = existingPort.ContainerPort
 				}
 			}
-
 			// Set ports and hostname in predictive unit so engine can read it from SDep
-			if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; portNum == firstPuPortNum && !hasSeparateEnginePod {
-				pu.Endpoint.ServiceHost = "localhost"
-			} else {
-				containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
-				pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
-			}
-			pu.Endpoint.ServicePort = portNum
-
-		}
-
-		for j := 0; j < len(p.ComponentSpecs); j++ {
-			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
-
-			// Add defaultMode to volumes ifnot set to ensure no changes when comparing later in controller
-			for k := 0; k < len(cSpec.Spec.Volumes); k++ {
-				vol := &cSpec.Spec.Volumes[k]
-				if vol.Secret != nil && vol.Secret.DefaultMode == nil {
-					var defaultMode = corev1.SecretVolumeSourceDefaultMode
-					vol.Secret.DefaultMode = &defaultMode
-				} else if vol.ConfigMap != nil && vol.ConfigMap.DefaultMode == nil {
-					var defaultMode = corev1.ConfigMapVolumeSourceDefaultMode
-					vol.ConfigMap.DefaultMode = &defaultMode
-				} else if vol.DownwardAPI != nil && vol.DownwardAPI.DefaultMode == nil {
-					var defaultMode = corev1.DownwardAPIVolumeSourceDefaultMode
-					vol.DownwardAPI.DefaultMode = &defaultMode
-				} else if vol.Projected != nil && vol.Projected.DefaultMode == nil {
-					var defaultMode = corev1.ProjectedVolumeSourceDefaultMode
-					vol.Projected.DefaultMode = &defaultMode
+			// if this is the firstPuPortNum then we've not added engine yet so put the engine in here
+			if pu.Endpoint.ServiceHost == "" {
+				if _, hasSeparateEnginePod := mlDep.Spec.Annotations[machinelearningv1alpha2.ANNOTATION_SEPARATE_ENGINE]; portNum == firstPuPortNum && !hasSeparateEnginePod {
+					pu.Endpoint.ServiceHost = "localhost"
+				} else {
+					containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
+					pu.Endpoint.ServiceHost = containerServiceValue + "." + mlDep.ObjectMeta.Namespace + ".svc.cluster.local."
 				}
 			}
+			if pu.Endpoint.ServicePort == 0 {
+				pu.Endpoint.ServicePort = portNum
+			}
+
 		}
+
 	}
 
 	return nil
