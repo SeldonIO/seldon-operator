@@ -444,7 +444,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			var deploy *appsv1.Deployment
 			found := false
 
-			// find the pu that the webhook marked as localhost
+			// find the pu that the webhook marked as localhost as its corresponding deployment should get the engine
 			pu := machinelearningv1alpha2.GetEnginePredictiveUnit(p.Graph)
 			if pu == nil {
 				// below should never happen - if it did would suggest problem in webhook
@@ -550,6 +550,11 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 	containerServiceKey := machinelearningv1alpha2.GetPredictorServiceNameKey(con)
 	containerServiceValue := machinelearningv1alpha2.GetContainerServiceName(mlDep, p, con)
 	pu := machinelearningv1alpha2.GetPredcitiveUnit(p.Graph, con.Name)
+
+	// only create services for containers defined as pus in the graph
+	if pu == nil {
+		return nil
+	}
 	namespace := getNamespace(mlDep)
 	portType := "http"
 	var portNum int32
@@ -570,8 +575,8 @@ func createContainerService(deploy *appsv1.Deployment, p machinelearningv1alpha2
 	}
 
 	if portNum == 0 {
-		// this is a user-supplied continer, it isn't a pu and doesn't have a port
-		// we don't know what it would respond to so can't create a service for it
+		// should have port by now
+		// if we don't know what it would respond to so can't create a service for it
 		return nil
 	}
 

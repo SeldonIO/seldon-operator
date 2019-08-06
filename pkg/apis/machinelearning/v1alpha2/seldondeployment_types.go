@@ -141,7 +141,7 @@ func GetPredcitiveUnit(pu *PredictiveUnit, name string) *PredictiveUnit {
 	}
 }
 
-// if engine is not separated then this tells us which pu it should go on, as the webhook has set that on the pu
+// if engine is not separated then this tells us which pu it should go on, as the mutating webhook handler has set host as localhost on the pu
 func GetEnginePredictiveUnit(pu *PredictiveUnit) *PredictiveUnit {
 	if pu.Endpoint != nil && pu.Endpoint.ServiceHost == "localhost" {
 		return pu
