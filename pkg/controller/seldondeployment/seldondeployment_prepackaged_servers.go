@@ -34,6 +34,7 @@ var (
 	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
 	DefaultTFServerImageNameRest      = "seldonio/tfserving-proxy_rest:0.3"
 	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
+	TFServingContainerName            = "tfserving"
 )
 
 func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
@@ -96,11 +97,11 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 			}
 		}
 
-		tfServingContainer := utils.GetContainerForDeployment(deploy, "tfserving")
+		tfServingContainer := utils.GetContainerForDeployment(deploy, TFServingContainerName)
 		existing = tfServingContainer != nil
 		if !existing {
 			tfServingContainer = &v1.Container{
-				Name:  "tfserving",
+				Name:  TFServingContainerName,
 				Image: "tensorflow/serving:latest",
 				Args: []string{
 					"/usr/bin/tensorflow_model_server",
@@ -258,7 +259,8 @@ func createStandaloneModelServers(r *ReconcileSeldonDeployment, mlDep *machinele
 		for k := 0; k < len(deploy.Spec.Template.Spec.Containers); k++ {
 			con := &deploy.Spec.Template.Spec.Containers[k]
 
-			if con.Name != "seldon-container-engine" && con.Name != "tfserving" && con.Name != "" {
+			//checking for con.Name != "" is a fallback check that we haven't got an empty/nil container as name is required
+			if con.Name != EngineContainerName && con.Name != TFServingContainerName && con.Name != "" {
 				svc := createContainerService(deploy, *p, mlDep, con, *c)
 				c.services = append(c.services, svc)
 			}

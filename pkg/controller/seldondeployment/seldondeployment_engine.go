@@ -28,10 +28,14 @@ import (
 	"strings"
 )
 
+var (
+	EngineContainerName = "seldon-container-engine"
+)
+
 func addEngineToDeployment(mlDep *machinelearningv1alpha2.SeldonDeployment, p *machinelearningv1alpha2.PredictorSpec, engine_http_port int, engine_grpc_port int, pSvcName string, deploy *appsv1.Deployment) error {
 	//check not already present
 	for _, con := range deploy.Spec.Template.Spec.Containers {
-		if strings.Compare(con.Name, "seldon-container-engine") == 0 {
+		if strings.Compare(con.Name, EngineContainerName) == 0 {
 			return nil
 		}
 	}
@@ -129,7 +133,7 @@ func createEngineContainer(mlDep *machinelearningv1alpha2.SeldonDeployment, p *m
 	}
 
 	c := corev1.Container{
-		Name:                     "seldon-container-engine",
+		Name:                     EngineContainerName,
 		Image:                    getEnv("ENGINE_CONTAINER_IMAGE_AND_VERSION", "seldonio/engine:0.2.7-SNAPSHOT"),
 		ImagePullPolicy:          corev1.PullPolicy(getEnv("ENGINE_CONTAINER_IMAGE_PULL_POLICY", "IfNotPresent")),
 		TerminationMessagePath:   "/dev/termination-log",

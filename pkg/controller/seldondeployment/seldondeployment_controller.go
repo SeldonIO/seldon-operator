@@ -406,11 +406,13 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			// create services for each container
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				var con *corev1.Container
+				// get the container on the created deployment, as createDeploymentWithoutEngine will have created as a copy of the spec in the manifest and added defaults to it
+				// we need the reference as we may have to modify the container when creating the Service (e.g. to add probes)
 				con = utils.GetContainerForDeployment(deploy, cSpec.Spec.Containers[k].Name)
 
 				// engine will later get a special predictor service as it is entrypoint for graph
 				// and no need to expose tfserving container as it's accessed via proxy
-				if con.Name != "seldon-container-engine" && con.Name != "tfserving" && con.Name != "" {
+				if con.Name != EngineContainerName && con.Name != TFServingContainerName && con != nil {
 
 					// service for hitting a model directly, not via engine
 					svc := createContainerService(deploy, p, mlDep, con, c)
@@ -425,6 +427,10 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			if len(deploy.Spec.Template.Spec.Containers) > 0 && deploy.Spec.Template.Spec.Containers[0].Name != "" {
 				// Add deployment, provided we have a non-empty spec
 				c.deployments = append(c.deployments, deploy)
+			} else {
+				// if we've created a deployment without engine and there's no spec then we may just have an empty deployment
+				// don't add an empty deployment as this likely means it's a prepackaged use-case and will be handled later
+				// so here we do nothing and move on
 			}
 		}
 
@@ -438,8 +444,10 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			var deploy *appsv1.Deployment
 			found := false
 
+			// find the pu that the webhook marked as localhost
 			pu := machinelearningv1alpha2.GetEnginePredictiveUnit(p.Graph)
 			if pu == nil {
+				// below should never happen - if it did would suggest problem in webhook
 				return nil, fmt.Errorf("Engine not separate and no pu with localhost service - not clear where to inject engine")
 			}
 			// find the deployment with a container for the pu marked for engine
@@ -454,6 +462,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 			}
 
 			if !found {
+				// by this point we should have created the Deployment corresponding to the pu marked localhost - if we haven't something has gone wrong
 				return nil, fmt.Errorf("Engine not separate and no deployment for pu with localhost service - not clear where to inject engine")
 			}
 			err := addEngineToDeployment(mlDep, &p, engine_http_port, engine_grpc_port, pSvcName, deploy)

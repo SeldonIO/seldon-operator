@@ -142,6 +142,9 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		c.deployments = append(c.deployments, deploy)
 
 		//Create Service to be exposed externally (ambassador or istio)
+		// isn't really a predictor service as the explainer is part of a predictor but has its own external endpoint
+		// if you do a canary you get a default predictor and a canary predictor and both could have their own explainer
+		// each explainer with an external service and its own distinct name
 		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort, p.Name+"-explainer")
 		if err != nil {
 			return err
