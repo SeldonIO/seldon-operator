@@ -31,15 +31,6 @@ import (
 	"strconv"
 )
 
-var (
-	DefaultSKLearnServerImageNameRest = "seldonio/sklearnserver_rest:0.1"
-	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
-	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
-	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
-	DefaultTFServerImageNameRest      = "seldonio/tfserving-proxy_rest:0.3"
-	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
-)
-
 func init() {
 	webhookName := "mutating-create-update-seldondeployment"
 	if HandlerMap[webhookName] == nil {

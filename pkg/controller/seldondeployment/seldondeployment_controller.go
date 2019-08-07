@@ -392,6 +392,12 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 		for j := 0; j < len(p.ComponentSpecs); j++ {
 			cSpec := mlDep.Spec.Predictors[i].ComponentSpecs[j]
+
+			// if no container spec then nothing to create at this point - prepackaged model server cases handled later
+			if len(cSpec.Spec.Containers) == 0 {
+				continue
+			}
+
 			// create Deployment from podspec
 			depName := machinelearningv1alpha2.GetDeploymentName(mlDep, p, cSpec)
 			deploy := createDeploymentWithoutEngine(depName, seldonId, cSpec, &p, mlDep)
@@ -412,9 +418,9 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 				// engine will later get a special predictor service as it is entrypoint for graph
 				// and no need to expose tfserving container as it's accessed via proxy
-				if con.Name != EngineContainerName && con.Name != TFServingContainerName && con != nil {
+				if con.Name != EngineContainerName && con.Name != TFServingContainerName {
 
-					// service for hitting a model directly, not via engine
+					// service for hitting a model directly, not via engine - also adds ports to container if needed
 					svc := createContainerService(deploy, p, mlDep, con, c)
 					if svc != nil {
 						c.services = append(c.services, svc)
@@ -424,14 +430,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 					}
 				}
 			}
-			if len(deploy.Spec.Template.Spec.Containers) > 0 && deploy.Spec.Template.Spec.Containers[0].Name != "" {
-				// Add deployment, provided we have a non-empty spec
-				c.deployments = append(c.deployments, deploy)
-			} else {
-				// if we've created a deployment without engine and there's no spec then we may just have an empty deployment
-				// don't add an empty deployment as this likely means it's a prepackaged use-case and will be handled later
-				// so here we do nothing and move on
-			}
+			c.deployments = append(c.deployments, deploy)
 		}
 
 		err = createStandaloneModelServers(r, mlDep, &p, &c, p.Graph)
