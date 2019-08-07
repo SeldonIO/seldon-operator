@@ -90,10 +90,13 @@ func GetExplainerDeploymentName(sdepName string, predictorSpec *PredictorSpec) s
 }
 
 func GetDeploymentName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, podSpec *SeldonPodSpec) string {
-	if len(podSpec.Metadata.Name) != 0 {
+	if podSpec != nil && len(podSpec.Metadata.Name) != 0 {
 		return podSpec.Metadata.Name
 	} else {
-		name := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + containerHash(podSpec)
+		name := mlDep.Spec.Name + "-" + predictorSpec.Name
+		if podSpec != nil {
+			name = name + "-" + containerHash(podSpec)
+		}
 		if len(name) > 63 {
 			return "seldon-" + hash(name)
 		} else {
@@ -136,6 +139,33 @@ func GetPredcitiveUnit(pu *PredictiveUnit, name string) *PredictiveUnit {
 		}
 		return nil
 	}
+}
+
+// if engine is not separated then this tells us which pu it should go on, as the mutating webhook handler has set host as localhost on the pu
+func GetEnginePredictiveUnit(pu *PredictiveUnit) *PredictiveUnit {
+	if pu.Endpoint != nil && pu.Endpoint.ServiceHost == "localhost" {
+		return pu
+	} else {
+		for i := 0; i < len(pu.Children); i++ {
+			found := GetEnginePredictiveUnit(&pu.Children[i])
+			if found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+}
+
+func GetPredictiveUnitList(p *PredictiveUnit) (list []*PredictiveUnit) {
+	list = append(list, p)
+
+	for i := 0; i < len(p.Children); i++ {
+		pu := &p.Children[i]
+		if pu != nil {
+			list = append(list, GetPredictiveUnitList(pu)...)
+		}
+	}
+	return list
 }
 
 func cleanContainerName(name string) string {
