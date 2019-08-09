@@ -59,7 +59,7 @@ func credentialsBuilder(Client client.Client) (credentialsBuilder *credentials.C
 }
 
 // InjectModelInitializer injects an init container to provision model data
-func InjectModelInitializer(deployment *appsv1.Deployment, containerName string, srcURI string, serviceAccountName string, Client client.Client) (deploy *appsv1.Deployment, err error) {
+func InjectModelInitializer(deployment *appsv1.Deployment, containerName string, srcURI string, serviceAccountName string, envSecretRefName string, Client client.Client) (deploy *appsv1.Deployment, err error) {
 
 	if srcURI == "" {
 		return deployment, nil
@@ -185,6 +185,18 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 		&podSpec.Volumes,
 	); err != nil {
 		return nil, err
+	}
+
+	// Inject credentials using secretRef
+	if envSecretRefName != "" {
+		initContainer.EnvFrom = append(initContainer.EnvFrom,
+			corev1.EnvFromSource{
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: envSecretRefName,
+					},
+				},
+			})
 	}
 
 	// Add init container to the spec
