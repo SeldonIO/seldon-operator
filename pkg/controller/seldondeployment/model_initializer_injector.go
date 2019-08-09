@@ -21,6 +21,7 @@ import (
 	"github.com/seldonio/seldon-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
@@ -158,6 +159,10 @@ func InjectModelInitializer(deployment *appsv1.Deployment, containerName string,
 		VolumeMounts:             modelInitializerMounts,
 		TerminationMessagePath:   "/dev/termination-log",
 		TerminationMessagePolicy: corev1.TerminationMessageReadFile,
+		Resources: corev1.ResourceRequirements{
+			Limits:   corev1.ResourceList{"cpu": resource.MustParse("1"), "memory": resource.MustParse("4Gi")},
+			Requests: corev1.ResourceList{"cpu": resource.MustParse("0.5"), "memory": resource.MustParse("1Gi")},
+		},
 	}
 
 	addVolumeMountToContainer(userContainer, ModelInitializerVolumeName)
