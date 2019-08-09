@@ -175,7 +175,10 @@ func cleanContainerName(name string) string {
 
 func GetContainerServiceName(mlDep *SeldonDeployment, predictorSpec PredictorSpec, c *v1.Container) string {
 	containerImageName := cleanContainerName(c.Image)
-	svcName := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + c.Name + "-" + containerImageName
+	svcName := mlDep.Spec.Name + "-" + predictorSpec.Name + "-" + c.Name
+	if containerImageName != "" {
+		svcName = svcName + "-" + containerImageName
+	}
 	if len(svcName) > 63 {
 		svcName = "seldon" + "-" + containerImageName + "-" + hash(svcName)
 		if len(svcName) > 63 {
