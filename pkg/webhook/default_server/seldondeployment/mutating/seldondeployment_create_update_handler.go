@@ -179,7 +179,7 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			con := utils.GetContainerForPredictiveUnit(&p, pu.Name)
 
 			//only assign host and port if there's a container or it's a prepackaged model server
-			if *pu.Implementation != machinelearningv1alpha2.SKLEARN_SERVER && *pu.Implementation != machinelearningv1alpha2.XGBOOST_SERVER && *pu.Implementation != machinelearningv1alpha2.TENSORFLOW_SERVER && (con == nil || con.Name == "") {
+			if *pu.Implementation != machinelearningv1alpha2.SKLEARN_SERVER && *pu.Implementation != machinelearningv1alpha2.XGBOOST_SERVER && *pu.Implementation != machinelearningv1alpha2.TENSORFLOW_SERVER && *pu.Implementation != machinelearningv1alpha2.MLFLOW_SERVER && (con == nil || con.Name == "") {
 				continue
 			}
 
