@@ -35,6 +35,8 @@ var (
 	DefaultTFServerImageNameRest      = "seldonio/tfserving-proxy_rest:0.3"
 	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
 	TFServingContainerName            = "tfserving"
+	DefaultMLFlowServerImageNameRest  = "seldonio/mlflowserver_rest:0.1"
+	DefaultMLFlowServerImageNameGrpc  = "seldonio/mlflowserver_grpc:0.1"
 )
 
 func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
@@ -139,7 +141,8 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 
 func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
 	if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER ||
-		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
+		*pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER ||
+		*pu.Implementation == machinelearningv1alpha2.MLFLOW_SERVER {
 
 		ty := machinelearningv1alpha2.MODEL
 		pu.Type = &ty
@@ -169,6 +172,12 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 					c.Image = DefaultXGBoostServerImageNameRest
 				} else {
 					c.Image = DefaultXGBoostServerImageNameGrpc
+				}
+			} else if *pu.Implementation == machinelearningv1alpha2.MLFLOW_SERVER {
+				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+					c.Image = DefaultMLFlowServerImageNameRest
+				} else {
+					c.Image = DefaultMLFlowServerImageNameGrpc
 				}
 			}
 		}

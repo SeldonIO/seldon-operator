@@ -264,6 +264,7 @@ const (
 	SKLEARN_SERVER         PredictiveUnitImplementation = "SKLEARN_SERVER"
 	XGBOOST_SERVER         PredictiveUnitImplementation = "XGBOOST_SERVER"
 	TENSORFLOW_SERVER      PredictiveUnitImplementation = "TENSORFLOW_SERVER"
+	MLFLOW_SERVER          PredictiveUnitImplementation = "MLFLOW_SERVER"
 )
 
 type PredictiveUnitMethod string
