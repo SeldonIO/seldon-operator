@@ -27,18 +27,6 @@ import (
 	"strings"
 )
 
-var (
-	DefaultSKLearnServerImageNameRest = "seldonio/sklearnserver_rest:0.1"
-	DefaultSKLearnServerImageNameGrpc = "seldonio/sklearnserver_grpc:0.1"
-	DefaultXGBoostServerImageNameRest = "seldonio/xgboostserver_rest:0.1"
-	DefaultXGBoostServerImageNameGrpc = "seldonio/xgboostserver_grpc:0.1"
-	DefaultTFServerImageNameRest      = "seldonio/tfserving-proxy_rest:0.3"
-	DefaultTFServerImageNameGrpc      = "seldonio/tfserving-proxy_grpc:0.3"
-	TFServingContainerName            = "tfserving"
-	DefaultMLFlowServerImageNameRest  = "seldonio/mlflowserver_rest:0.1"
-	DefaultMLFlowServerImageNameGrpc  = "seldonio/mlflowserver_grpc:0.1"
-)
-
 func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alpha2.PredictiveUnit, p *machinelearningv1alpha2.PredictorSpec, deploy *appsv1.Deployment) error {
 
 	if *pu.Implementation == machinelearningv1alpha2.TENSORFLOW_SERVER {
@@ -58,36 +46,9 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 			}
 		}
 
-		var uriParam machinelearningv1alpha2.Parameter
 		//Add missing fields
-		// Add image
-		if c.Image == "" {
-			if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-				c.Image = DefaultTFServerImageNameRest
-				uriParam = machinelearningv1alpha2.Parameter{
-					Name:  "rest_endpoint",
-					Type:  "STRING",
-					Value: "http://0.0.0.0:2001",
-				}
-			} else {
-				c.Image = DefaultTFServerImageNameGrpc
-				uriParam = machinelearningv1alpha2.Parameter{
-					Name:  "grpc_endpoint",
-					Type:  "STRING",
-					Value: "0.0.0.0:2000",
-				}
-
-			}
-			c.ImagePullPolicy = v1.PullAlways
-		}
-
-		parameters := append(pu.Parameters, uriParam)
-		if len(parameters) > 0 {
-			if !utils.HasEnvVar(c.Env, machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS) {
-				c.Env = append(c.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(parameters)})
-			}
-		}
-
+		utils.SetImageNameForPrepackContainer(pu, c)
+		SetUriParamsForTFServingProxyContainer(pu, c)
 		addContainerDefaults(c)
 
 		// Add container to deployment
@@ -99,11 +60,11 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 			}
 		}
 
-		tfServingContainer := utils.GetContainerForDeployment(deploy, TFServingContainerName)
+		tfServingContainer := utils.GetContainerForDeployment(deploy, constants.TFServingContainerName)
 		existing = tfServingContainer != nil
 		if !existing {
 			tfServingContainer = &v1.Container{
-				Name:  TFServingContainerName,
+				Name:  constants.TFServingContainerName,
 				Image: "tensorflow/serving:latest",
 				Args: []string{
 					"/usr/bin/tensorflow_model_server",
@@ -158,29 +119,7 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 			}
 		}
 
-		//Add missing fields
-		// Add image
-		if c.Image == "" {
-			if *pu.Implementation == machinelearningv1alpha2.SKLEARN_SERVER {
-				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-					c.Image = DefaultSKLearnServerImageNameRest
-				} else {
-					c.Image = DefaultSKLearnServerImageNameGrpc
-				}
-			} else if *pu.Implementation == machinelearningv1alpha2.XGBOOST_SERVER {
-				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-					c.Image = DefaultXGBoostServerImageNameRest
-				} else {
-					c.Image = DefaultXGBoostServerImageNameGrpc
-				}
-			} else if *pu.Implementation == machinelearningv1alpha2.MLFLOW_SERVER {
-				if pu.Endpoint.Type == machinelearningv1alpha2.REST {
-					c.Image = DefaultMLFlowServerImageNameRest
-				} else {
-					c.Image = DefaultMLFlowServerImageNameGrpc
-				}
-			}
-		}
+		utils.SetImageNameForPrepackContainer(pu, c)
 
 		// Add parameters envvar - point at mount path because initContainer will download
 		if !utils.HasEnvVar(c.Env, constants.PU_PARAMETER_ENVVAR) {
@@ -215,6 +154,51 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 		}
 	}
 	return nil
+}
+
+func SetUriParamsForTFServingProxyContainer(pu *machinelearningv1alpha2.PredictiveUnit, c *v1.Container) {
+
+	parameters := pu.Parameters
+
+	hasUriParams := false
+	if len(pu.Parameters) > 0 {
+		for _, paramElement := range pu.Parameters {
+			if paramElement.Name == "rest_endpoint" || paramElement.Name == "grpc_endpoint" {
+
+				hasUriParams = true
+			}
+		}
+	}
+	if !hasUriParams {
+		var uriParam machinelearningv1alpha2.Parameter
+
+		if pu.Endpoint.Type == machinelearningv1alpha2.REST {
+			uriParam = machinelearningv1alpha2.Parameter{
+				Name:  "rest_endpoint",
+				Type:  "STRING",
+				Value: "http://0.0.0.0:2001",
+			}
+		} else {
+			uriParam = machinelearningv1alpha2.Parameter{
+				Name:  "grpc_endpoint",
+				Type:  "STRING",
+				Value: "0.0.0.0:2000",
+			}
+
+		}
+
+		parameters = append(pu.Parameters, uriParam)
+
+	}
+
+	if len(parameters) > 0 {
+		if !utils.HasEnvVar(c.Env, machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS) {
+			c.Env = append(c.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(parameters)})
+		} else {
+			c.Env = utils.SetEnvVar(c.Env, v1.EnvVar{Name: machinelearningv1alpha2.ENV_PREDICTIVE_UNIT_PARAMETERS, Value: utils.GetPredictiveUnitAsJson(parameters)})
+		}
+
+	}
 }
 
 func addContainerDefaults(c *v1.Container) {
@@ -269,7 +253,7 @@ func createStandaloneModelServers(r *ReconcileSeldonDeployment, mlDep *machinele
 			con := &deploy.Spec.Template.Spec.Containers[k]
 
 			//checking for con.Name != "" is a fallback check that we haven't got an empty/nil container as name is required
-			if con.Name != EngineContainerName && con.Name != TFServingContainerName && con.Name != "" {
+			if con.Name != EngineContainerName && con.Name != constants.TFServingContainerName && con.Name != "" {
 				svc := createContainerService(deploy, *p, mlDep, con, *c)
 				c.services = append(c.services, svc)
 			}

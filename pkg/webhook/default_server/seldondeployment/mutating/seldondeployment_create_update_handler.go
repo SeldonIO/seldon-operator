@@ -23,6 +23,7 @@ import (
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
 	"github.com/seldonio/seldon-operator/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"os"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
@@ -178,8 +179,9 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 
 			con := utils.GetContainerForPredictiveUnit(&p, pu.Name)
 
+			// want to set host and port for engine to use in orchestration
 			//only assign host and port if there's a container or it's a prepackaged model server
-			if *pu.Implementation != machinelearningv1alpha2.SKLEARN_SERVER && *pu.Implementation != machinelearningv1alpha2.XGBOOST_SERVER && *pu.Implementation != machinelearningv1alpha2.TENSORFLOW_SERVER && *pu.Implementation != machinelearningv1alpha2.MLFLOW_SERVER && (con == nil || con.Name == "") {
+			if !utils.IsPrepack(pu) && (con == nil || con.Name == "") {
 				continue
 			}
 
@@ -219,6 +221,37 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 			}
 			if pu.Endpoint.ServicePort == 0 {
 				pu.Endpoint.ServicePort = portNum
+			}
+
+			// for prepack servers we want to add a container name and image to correspond to grafana dashboards
+			if utils.IsPrepack(pu) {
+
+				existing := con != nil
+				if !existing {
+					con = &corev1.Container{
+						Name: pu.Name,
+					}
+				}
+
+				utils.SetImageNameForPrepackContainer(pu, con)
+
+				// if new Add container to componentSpecs
+				if !existing {
+					if len(p.ComponentSpecs) > 0 {
+						p.ComponentSpecs[0].Spec.Containers = append(p.ComponentSpecs[0].Spec.Containers, *con)
+					} else {
+						podSpec := machinelearningv1alpha2.SeldonPodSpec{
+							Metadata: metav1.ObjectMeta{CreationTimestamp: metav1.Now()},
+							Spec: corev1.PodSpec{
+								Containers: []corev1.Container{*con},
+							},
+						}
+						p.ComponentSpecs = []*machinelearningv1alpha2.SeldonPodSpec{&podSpec}
+
+						// p is a copy so update the entry
+						mlDep.Spec.Predictors[i] = p
+					}
+				}
 			}
 
 		}
