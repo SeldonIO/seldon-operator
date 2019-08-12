@@ -131,7 +131,7 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 			deploy.Spec.Template.Spec.Containers = append(deploy.Spec.Template.Spec.Containers, *tfServingContainer)
 		}
 
-		_, err := InjectModelInitializer(deploy, tfServingContainer.Name, pu.ModelURI, pu.ServiceAccountName, r)
+		_, err := InjectModelInitializer(deploy, tfServingContainer.Name, pu.ModelURI, pu.ServiceAccountName, pu.EnvSecretRefName, r)
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 			}
 		}
 
-		_, err := InjectModelInitializer(deploy, c.Name, pu.ModelURI, pu.ServiceAccountName, r.Client)
+		_, err := InjectModelInitializer(deploy, c.Name, pu.ModelURI, pu.ServiceAccountName, pu.EnvSecretRefName, r.Client)
 		if err != nil {
 			return err
 		}

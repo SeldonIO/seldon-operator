@@ -129,7 +129,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		}}
 		deploy := createDeploymentWithoutEngine(depName, seldonId, &seldonPodSpec, p, mlDep)
 
-		deploy, err := InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, r.Client)
+		deploy, err := InjectModelInitializer(deploy, explainerContainer.Name, p.Explainer.ModelUri, p.Explainer.ServiceAccountName, "", r.Client)
 		if err != nil {
 			return err
 		}
