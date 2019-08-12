@@ -25,6 +25,7 @@ import (
 	"github.com/knative/pkg/apis/istio/common/v1alpha1"
 	istio "github.com/knative/pkg/apis/istio/v1alpha3"
 	machinelearningv1alpha2 "github.com/seldonio/seldon-operator/pkg/apis/machinelearning/v1alpha2"
+	"github.com/seldonio/seldon-operator/pkg/constants"
 	"github.com/seldonio/seldon-operator/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscaling "k8s.io/api/autoscaling/v2beta1"
@@ -418,7 +419,7 @@ func createComponents(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alph
 
 				// engine will later get a special predictor service as it is entrypoint for graph
 				// and no need to expose tfserving container as it's accessed via proxy
-				if con.Name != EngineContainerName && con.Name != TFServingContainerName {
+				if con.Name != EngineContainerName && con.Name != constants.TFServingContainerName {
 
 					// service for hitting a model directly, not via engine - also adds ports to container if needed
 					svc := createContainerService(deploy, p, mlDep, con, c)
