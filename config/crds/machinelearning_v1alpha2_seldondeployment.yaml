@@ -70,6 +70,8 @@ spec:
                           type:
                             type: string
                         type: object
+                      envSecretRefName:
+                        type: string
                       modelUri:
                         type: string
                       serviceAccountName:
