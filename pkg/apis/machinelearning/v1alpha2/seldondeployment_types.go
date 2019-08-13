@@ -228,6 +228,7 @@ type Explainer struct {
 	ContainerSpec      v1.Container      `json:"containerSpec,omitempty" protobuf:"bytes,4,opt,name=containerSpec"`
 	Config             map[string]string `json:"config,omitempty" protobuf:"bytes,5,opt,name=config"`
 	Endpoint           *Endpoint         `json:"endpoint,omitempty" protobuf:"bytes,6,opt,name=endpoint"`
+	EnvSecretRefName   string            `json:"envSecretRefName,omitempty" protobuf:"bytes,7,opt,name=envSecretRefName"`
 }
 
 type SeldonPodSpec struct {
