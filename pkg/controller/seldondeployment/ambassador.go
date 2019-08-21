@@ -15,6 +15,7 @@ const (
 	ANNOTATION_AMBASSADOR_SERVICE      = "seldon.io/ambassador-service-name"
 	ANNOTATION_AMBASSADOR_HEADER       = "seldon.io/ambassador-header"
 	ANNOTATION_AMBASSADOR_REGEX_HEADER = "seldon.io/ambassador-regex-header"
+	ANNOTATION_AMBASSADOR_ID           = "seldon.io/ambassador-id"
 
 	YAML_SEP = "---\n"
 )
@@ -34,6 +35,7 @@ type AmbassadorConfig struct {
 	Weight       int32                  `yaml:"weight,omitempty"`
 	Shadow       *bool                  `yaml:"shadow,omitempty"`
 	RetryPolicy  *AmbassadorRetryPolicy `yaml:"retry_policy,omitempty"`
+	InstanceId   string                 `yaml:"ambassador_id,omitempty"`
 }
 
 type AmbassadorRetryPolicy struct {
@@ -52,7 +54,8 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	weight int32,
 	shadowing string,
 	engine_http_port int,
-	nameOverride string) (string, error) {
+	nameOverride string,
+	instance_id string) (string, error) {
 
 	namespace := getNamespace(mlDep)
 
@@ -110,6 +113,9 @@ func getAmbassadorRestConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		shadow := true
 		c.Shadow = &shadow
 	}
+	if instance_id != "" {
+		c.InstanceId = instance_id
+	}
 	v, err := yaml.Marshal(c)
 	if err != nil {
 		return "", err
@@ -128,7 +134,8 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 	weight int32,
 	shadowing string,
 	engine_grpc_port int,
-	nameOverride string) (string, error) {
+	nameOverride string,
+	instance_id string) (string, error) {
 
 	grpc := true
 	namespace := getNamespace(mlDep)
@@ -188,7 +195,9 @@ func getAmbassadorGrpcConfig(mlDep *machinelearningv1alpha2.SeldonDeployment,
 		shadow := true
 		c.Shadow = &shadow
 	}
-
+	if instance_id != "" {
+		c.InstanceId = instance_id
+	}
 	v, err := yaml.Marshal(c)
 	if err != nil {
 		return "", err
@@ -214,21 +223,22 @@ func getAmbassadorConfigs(mlDep *machinelearningv1alpha2.SeldonDeployment, p *ma
 		serviceNameExternal := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_SERVICE, mlDep.ObjectMeta.Name)
 		customHeader := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_HEADER, "")
 		customRegexHeader := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_REGEX_HEADER, "")
+		instance_id := getAnnotation(mlDep, ANNOTATION_AMBASSADOR_ID, "")
 
-		cRestGlobal, err := getAmbassadorRestConfig(mlDep, p, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port, nameOverride)
+		cRestGlobal, err := getAmbassadorRestConfig(mlDep, p, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port, nameOverride, instance_id)
 		if err != nil {
 			return "", err
 		}
-		cGrpcGlobal, err := getAmbassadorGrpcConfig(mlDep, p, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port, nameOverride)
+		cGrpcGlobal, err := getAmbassadorGrpcConfig(mlDep, p, true, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port, nameOverride, instance_id)
 		if err != nil {
 			return "", err
 		}
-		cRestNamespaced, err := getAmbassadorRestConfig(mlDep, p, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port, nameOverride)
+		cRestNamespaced, err := getAmbassadorRestConfig(mlDep, p, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_http_port, nameOverride, instance_id)
 		if err != nil {
 			return "", err
 		}
 
-		cGrpcNamespaced, err := getAmbassadorGrpcConfig(mlDep, p, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port, nameOverride)
+		cGrpcNamespaced, err := getAmbassadorGrpcConfig(mlDep, p, false, serviceName, serviceNameExternal, customHeader, customRegexHeader, weight, shadowing, engine_grpc_port, nameOverride, instance_id)
 		if err != nil {
 			return "", err
 		}
