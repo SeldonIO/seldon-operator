@@ -43,6 +43,12 @@ func addTFServerContainer(r *ReconcileSeldonDeployment, pu *machinelearningv1alp
 		if !existing {
 			c = &v1.Container{
 				Name: pu.Name,
+				VolumeMounts: []v1.VolumeMount{
+					{
+						Name:      machinelearningv1alpha2.PODINFO_VOLUME_NAME,
+						MountPath: machinelearningv1alpha2.PODINFO_VOLUME_PATH,
+					},
+				},
 			}
 		}
 
@@ -116,7 +122,15 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 		if !existing {
 			c = &v1.Container{
 				Name: pu.Name,
+				VolumeMounts: []v1.VolumeMount{
+					{
+						Name:      machinelearningv1alpha2.PODINFO_VOLUME_NAME,
+						MountPath: machinelearningv1alpha2.PODINFO_VOLUME_PATH,
+					},
+				},
 			}
+
+
 		}
 
 		utils.SetImageNameForPrepackContainer(pu, c)
@@ -193,6 +207,14 @@ func SetUriParamsForTFServingProxyContainer(pu *machinelearningv1alpha2.Predicti
 		}
 
 		parameters = append(pu.Parameters, uriParam)
+
+		modelNameParam := machinelearningv1alpha2.Parameter{
+			Name:  "model_name",
+			Type:  "STRING",
+			Value: pu.Name,
+		}
+
+		parameters = append(parameters, modelNameParam)
 
 	}
 
