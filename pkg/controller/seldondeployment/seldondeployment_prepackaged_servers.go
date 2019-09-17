@@ -130,7 +130,6 @@ func addModelDefaultServers(r *ReconcileSeldonDeployment, pu *machinelearningv1a
 				},
 			}
 
-
 		}
 
 		utils.SetImageNameForPrepackContainer(pu, c)

@@ -115,7 +115,6 @@ func (h *SeldonDeploymentCreateUpdateHandler) MutatingSeldonDeploymentFn(ctx con
 				DownwardAPI: &corev1.DownwardAPIVolumeSource{Items: []corev1.DownwardAPIVolumeFile{
 					{Path: "annotations", FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.annotations", APIVersion: "v1"}}}, DefaultMode: &defaultMode}}})
 
-
 			// add service details for each container - looping this way as if containers in same pod and its the engine pod both need to be localhost
 			for k := 0; k < len(cSpec.Spec.Containers); k++ {
 				con := &cSpec.Spec.Containers[k]
