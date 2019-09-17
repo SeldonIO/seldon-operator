@@ -102,13 +102,14 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 			"--model_name=" + mlDep.Name,
 			"--predictor_host=" + pSvcEndpoint,
 			"--protocol=" + "seldon." + portType,
-			"--type=" + strings.ToLower(p.Explainer.Type),
 			"--http_port=" + strconv.Itoa(int(portNum)),
-		    "--use_grpc"}
+			"--use_grpc"}
 
 		if p.Explainer.ModelUri != "" {
 			explainerContainer.Args = append(explainerContainer.Args, "--storage_uri="+DefaultModelLocalMountPath)
 		}
+
+		explainerContainer.Args = append(explainerContainer.Args, strings.ToLower(p.Explainer.Type))
 
 		if p.Explainer.Type == "anchor_images" {
 			explainerContainer.Args = append(explainerContainer.Args, "--tf_data_type=float32")
@@ -157,7 +158,7 @@ func createExplainer(r *ReconcileSeldonDeployment, mlDep *machinelearningv1alpha
 		c.deployments = append(c.deployments, deploy)
 
 		// Use seldondeployment name dash explainer as the external service name. This should allow canarying.
-		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort, mlDep.ObjectMeta.Name+"-explainer" )
+		eSvc, err := createPredictorService(eSvcName, seldonId, p, mlDep, httpPort, grpcPort, mlDep.ObjectMeta.Name+"-explainer")
 		if err != nil {
 			return err
 		}
