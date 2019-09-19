@@ -1,5 +1,5 @@
 LOCAL_PRIVATE_REPO=127.0.0.1:5000
-VERSION=0.4.1
+VERSION=0.4.2-SNAPSHOT
 GO111MODULE=off
 # Image URL to use all building/pushing image targets
 IMG ?= seldonio/seldon-core-operator:${VERSION}

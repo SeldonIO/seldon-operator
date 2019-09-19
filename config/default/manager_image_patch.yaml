@@ -8,6 +8,6 @@ spec:
     spec:
       containers:
       # Change the value of image field below to your controller image URL
-      - image: seldonio/seldon-core-operator:0.4.1
+      - image: seldonio/seldon-core-operator:0.4.2-SNAPSHOT
         name: manager
         imagePullPolicy: IfNotPresent
